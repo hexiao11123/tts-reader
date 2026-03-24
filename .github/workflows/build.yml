@@ -3,8 +3,11 @@ name: Build & Release
 on:
   push:
     tags:
-      - 'v*'          # 推送 v1.0.0 这样的 tag 时触发
-  workflow_dispatch:  # 也可以在 GitHub 网页手动触发
+      - 'v*'
+  workflow_dispatch:
+
+permissions:
+  contents: write
 
 jobs:
   build:
