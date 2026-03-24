@@ -1,0 +1,57 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>朗读器</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <div class="app">
+    <!-- 顶部文件栏 -->
+    <div class="topbar">
+      <span class="file-name" id="fileName">未打开文件</span>
+      <button class="btn-open" id="btnOpen">打开文件</button>
+    </div>
+
+    <!-- 文本显示区域 -->
+    <div class="text-area" id="textArea">
+      <div class="placeholder" id="placeholder">
+        <p>点击「打开文件」加载 Word、PDF 或 TXT 文档</p>
+      </div>
+      <div class="sentences" id="sentences"></div>
+    </div>
+
+    <!-- 播放器控制栏 -->
+    <div class="player">
+      <!-- 进度条 -->
+      <div class="progress-container">
+        <span class="time" id="currentTime">00:00</span>
+        <div class="progress-bar" id="progressBar">
+          <div class="progress-fill" id="progressFill"></div>
+          <div class="progress-thumb" id="progressThumb"></div>
+        </div>
+        <span class="time" id="totalTime">00:00</span>
+      </div>
+
+      <!-- 控制按钮 -->
+      <div class="controls">
+        <button class="ctrl-btn" id="btnRestart" title="回到开头">⏮</button>
+        <button class="ctrl-btn" id="btnPrev" title="上一句">◀◀</button>
+        <button class="ctrl-btn btn-play" id="btnPlay" title="播放/暂停">▶</button>
+        <button class="ctrl-btn" id="btnNext" title="下一句">▶▶</button>
+        <button class="ctrl-btn" id="btnEnd" title="跳到结尾">⏭</button>
+
+        <div class="speed-control">
+          <span class="speed-label">语速</span>
+          <input type="range" id="speedSlider" min="0.5" max="2" step="0.1" value="1" />
+          <span class="speed-value" id="speedValue">1.0x</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script src="../node_modules/tesseract.js/dist/tesseract.min.js"></script>
+  <script type="module" src="renderer.js"></script>
+</body>
+</html>
