@@ -15,6 +15,8 @@ let elapsedBeforeCurrent = 0
 let currentVcn = 'xiaoyan'
 let voicePanelOpen = false
 let activeCategoryId = 'gentle-female'
+let speakGen = 0  // generation counter, incremented on each new speak() call
+let elapsedInCurrentSentenceAtPause = 0  // used by system TTS resume to preserve progress
 
 // ── 引擎管理��� ────────────────────────────────────────────────────────────
 const engine = new EngineManager({
@@ -54,7 +56,6 @@ const notificationBar  = document.getElementById('notificationBar')
 
 // ── 初始化 ────────────────────────────────────────────────────────────────
 async function init() {
-  // 加载已保存配置
   const cfg = await window.electronAPI.getConfig()
   engine.setCredentials(cfg.xunfei)
   speed = cfg.lastSpeed || 1.0
@@ -62,7 +63,15 @@ async function init() {
   speedValue.textContent = speed.toFixed(1) + 'x'
   engine.setSpeed(speed)
 
-  // 确定初始音色
+  // Fill system voices FIRST
+  const sysVoices = window.speechSynthesis.getVoices()
+  const sysCat = VOICE_CATEGORIES.find(c => c.id === 'system')
+  sysCat.voices = sysVoices
+    .filter(v => v.lang.startsWith('zh'))
+    .map(v => ({ vcn: v.name, name: v.name.replace(/^Microsoft /, '').split(' ')[0] }))
+  if (sysCat.voices.length === 0) sysCat.voices = [{ vcn: '__system_default__', name: '系统默认' }]
+
+  // Now findVoice works for all categories including system
   currentVcn = cfg.lastVoice || 'xiaoyan'
   const found = findVoice(currentVcn)
   if (found) {
@@ -70,14 +79,6 @@ async function init() {
     engine.setVcn(currentVcn)
     engine.setMode(found.category.id === 'system' ? 'system' : 'xunfei')
   }
-
-  // 填充系统语音列表
-  const sysVoices = window.speechSynthesis.getVoices()
-  const sysCat = VOICE_CATEGORIES.find(c => c.id === 'system')
-  sysCat.voices = sysVoices
-    .filter(v => v.lang.startsWith('zh'))
-    .map(v => ({ vcn: v.name, name: v.name.replace(/^Microsoft /, '').split(' ')[0] }))
-  if (sysCat.voices.length === 0) sysCat.voices = [{ vcn: '__system_default__', name: '系统默认' }]
 
   renderVoicePanel()
   updateVoiceButton()
@@ -226,6 +227,7 @@ async function speak(index) {
   if (index >= sentences.length) { stopAll(); updateProgressUI(totalDuration); return }
 
   engine.cancel()
+  const gen = ++speakGen  // capture current generation
   currentIndex = index
   highlightSentence(index)
   isPlaying = true; isPaused = false
@@ -235,6 +237,7 @@ async function speak(index) {
 
   await engine.speak(sentences[index])
 
+  if (gen !== speakGen) return  // a newer speak() was called, abort this chain
   if (isPlaying && !isPaused) {
     stopProgressTick()
     elapsedBeforeCurrent += durations[index]
@@ -248,10 +251,12 @@ function pauseResume() {
     engine.pause()
     isPaused = true; isPlaying = false
     stopProgressTick(); setPlayIcon(false)
+    elapsedInCurrentSentenceAtPause = (Date.now() - currentSentenceStart) / 1000
   } else if (isPaused) {
     isPaused = false; isPlaying = true
     setPlayIcon(true)
-    currentSentenceStart = Date.now()
+    currentSentenceStart = Date.now() - elapsedInCurrentSentenceAtPause * 1000
+    elapsedInCurrentSentenceAtPause = 0
     startProgressTick()
     engine.resume()
   }
@@ -339,7 +344,7 @@ speedSlider.addEventListener('input', () => {
     recalcDurations()
     elapsedBeforeCurrent = durations.slice(0, idx).reduce((a, b) => a + b, 0)
   }
-  if (isPlaying || isPaused) speak(currentIndex)
+  if (isPlaying || isPaused) speak(idx)
   window.electronAPI.setConfig({ lastSpeed: speed })
 })
 
