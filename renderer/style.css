@@ -474,3 +474,49 @@ body {
   cursor: pointer;
 }
 .btn-close-settings:hover { color: var(--text); }
+
+/* ── 音色面板内讯飞凭证 ───────────────────────── */
+.voice-cred-section { margin-top: 4px; }
+.voice-cred-title {
+  font-size: 11px;
+  color: var(--text-muted);
+  margin: 8px 0 6px;
+  letter-spacing: 0.5px;
+}
+.voice-cred-input {
+  display: block;
+  width: 100%;
+  background: var(--surface);
+  border: 1px solid rgba(255,255,255,0.07);
+  border-radius: 5px;
+  color: var(--text);
+  font-size: 12px;
+  padding: 5px 8px;
+  margin-bottom: 5px;
+  outline: none;
+  box-sizing: border-box;
+}
+.voice-cred-input:focus { border-color: var(--accent); }
+.voice-cred-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: 2px;
+}
+.voice-cred-status {
+  font-size: 11px;
+  color: var(--text-muted);
+}
+.voice-cred-status.ok   { color: #a6e3a1; }
+.voice-cred-status.fail { color: #f38ba8; }
+.voice-cred-save {
+  background: var(--accent);
+  color: #fff;
+  border: none;
+  border-radius: 5px;
+  padding: 4px 14px;
+  font-size: 12px;
+  cursor: pointer;
+  transition: opacity 0.15s;
+}
+.voice-cred-save:hover { opacity: 0.85; }

@@ -36,6 +36,18 @@
             <div class="voice-categories" id="voiceCategories"></div>
             <div class="voice-divider"></div>
             <div class="voice-list" id="voiceList"></div>
+            <!-- 讯飞凭证（选讯飞音色时显示） -->
+            <div class="voice-cred-section" id="voiceCredSection" style="display:none">
+              <div class="voice-divider"></div>
+              <div class="voice-cred-title">讯飞凭证</div>
+              <input class="voice-cred-input" type="text"     id="vpAppId"     placeholder="AppID" />
+              <input class="voice-cred-input" type="text"     id="vpApiKey"    placeholder="APIKey" />
+              <input class="voice-cred-input" type="password" id="vpApiSecret" placeholder="APISecret" />
+              <div class="voice-cred-row">
+                <span class="voice-cred-status" id="vpStatus"></span>
+                <button class="voice-cred-save" id="vpSave">保存</button>
+              </div>
+            </div>
           </div>
         </div>
         <button class="btn-settings" id="btnSettings" title="设置">⚙</button>

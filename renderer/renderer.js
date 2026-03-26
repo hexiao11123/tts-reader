@@ -53,6 +53,12 @@ const btnSave      = document.getElementById('btnSave')
 const btnCloseSettings = document.getElementById('btnCloseSettings')
 const settingsStatus   = document.getElementById('settingsStatus')
 const notificationBar  = document.getElementById('notificationBar')
+const voiceCredSection = document.getElementById('voiceCredSection')
+const vpAppId          = document.getElementById('vpAppId')
+const vpApiKey         = document.getElementById('vpApiKey')
+const vpApiSecret      = document.getElementById('vpApiSecret')
+const vpSave           = document.getElementById('vpSave')
+const vpStatus         = document.getElementById('vpStatus')
 
 // ── 初始化 ────────────────────────────────────────────────────────────────
 async function init() {
@@ -116,6 +122,9 @@ function renderVoicePanel() {
     })
     voiceListEl.appendChild(btn)
   }
+
+  // 讯飞凭证区域：选讯飞分类时显示
+  voiceCredSection.style.display = activeCategoryId === 'system' ? 'none' : 'block'
 }
 
 function selectVoice(cat, voice) {
@@ -132,7 +141,19 @@ function updateVoiceButton() {
   btnVoice.textContent = voice ? `音色：${cat.label} · ${voice.name} ▾` : '音色 ▾'
 }
 
-function openVoicePanel()  { voicePanelOpen = true;  voicePanel.style.display = 'block'; renderVoicePanel() }
+async function openVoicePanel() {
+  voicePanelOpen = true
+  voicePanel.style.display = 'block'
+  renderVoicePanel()
+  // 加载已保存的讯飞凭证
+  const cfg = await window.electronAPI.getConfig()
+  vpAppId.value     = cfg.xunfei.appId     || ''
+  vpApiKey.value    = cfg.xunfei.apiKey    || ''
+  vpApiSecret.value = cfg.xunfei.apiSecret || ''
+  const hasConfig = cfg.xunfei.appId && cfg.xunfei.apiKey && cfg.xunfei.apiSecret
+  vpStatus.textContent = hasConfig ? '● 已配置' : '○ 未配置'
+  vpStatus.className = 'voice-cred-status ' + (hasConfig ? 'ok' : '')
+}
 function closeVoicePanel() { voicePanelOpen = false; voicePanel.style.display = 'none' }
 
 btnVoice.addEventListener('click', (e) => {
@@ -141,6 +162,18 @@ btnVoice.addEventListener('click', (e) => {
 })
 document.addEventListener('click', () => { if (voicePanelOpen) closeVoicePanel() })
 voicePanel.addEventListener('click', e => e.stopPropagation())
+
+// 音色面板内讯飞凭证保存
+vpSave.addEventListener('click', async () => {
+  const cfg = { appId: vpAppId.value.trim(), apiKey: vpApiKey.value.trim(), apiSecret: vpApiSecret.value.trim() }
+  await window.electronAPI.setConfig({ xunfei: cfg })
+  engine.setCredentials(cfg)
+  vpStatus.textContent = '○ 测试中...'
+  vpStatus.className = 'voice-cred-status'
+  const ok = await engine.testXunfei(cfg)
+  vpStatus.textContent = ok ? '● 已连接' : '● 连接失败'
+  vpStatus.className = 'voice-cred-status ' + (ok ? 'ok' : 'fail')
+})
 
 // ── 设置面板 ──────────────────────────────────────────────────────────────
 btnSettings.addEventListener('click', async () => {
