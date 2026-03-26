@@ -1,6 +1,20 @@
-const { app, BrowserWindow, ipcMain, dialog } = require('electron')
+const { app, BrowserWindow, ipcMain, dialog, safeStorage } = require('electron')
 const path = require('path')
 const fs = require('fs')
+
+function getConfigPath() {
+  return require('path').join(app.getPath('userData'), 'config.json')
+}
+
+function readConfig() {
+  const p = getConfigPath()
+  if (!require('fs').existsSync(p)) return {}
+  try { return JSON.parse(require('fs').readFileSync(p, 'utf-8')) } catch { return {} }
+}
+
+function writeConfig(data) {
+  require('fs').writeFileSync(getConfigPath(), JSON.stringify(data, null, 2))
+}
 
 function createWindow() {
   const win = new BrowserWindow({
@@ -73,4 +87,41 @@ ipcMain.handle('open-file', async () => {
   } catch (err) {
     return { error: err.message }
   }
+})
+
+ipcMain.handle('get-config', () => {
+  const cfg = readConfig()
+  const xf = cfg.xunfei || {}
+  const decrypt = (v) => {
+    if (!v || !safeStorage.isEncryptionAvailable()) return ''
+    try { return safeStorage.decryptString(Buffer.from(v, 'base64')) } catch { return '' }
+  }
+  return {
+    xunfei: {
+      appId:     decrypt(xf.appId),
+      apiKey:    decrypt(xf.apiKey),
+      apiSecret: decrypt(xf.apiSecret),
+    },
+    lastVoice: cfg.lastVoice || 'xiaoyan',
+    lastSpeed: cfg.lastSpeed || 1.0,
+  }
+})
+
+ipcMain.handle('set-config', (_, patch) => {
+  const cfg = readConfig()
+  const encrypt = (v) => {
+    if (!v || !safeStorage.isEncryptionAvailable()) return ''
+    return safeStorage.encryptString(v).toString('base64')
+  }
+  if (patch.xunfei) {
+    cfg.xunfei = {
+      appId:     encrypt(patch.xunfei.appId),
+      apiKey:    encrypt(patch.xunfei.apiKey),
+      apiSecret: encrypt(patch.xunfei.apiSecret),
+    }
+  }
+  if (patch.lastVoice !== undefined) cfg.lastVoice = patch.lastVoice
+  if (patch.lastSpeed !== undefined) cfg.lastSpeed = patch.lastSpeed
+  writeConfig(cfg)
+  return { ok: true }
 })
