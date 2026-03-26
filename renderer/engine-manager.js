@@ -65,7 +65,7 @@ export class EngineManager {
     this._paused = false
     if (this._mode === 'xunfei') {
       // 讯飞无原生暂停，从句首重播
-      this.speak(this._pausedText)
+      this.speak(this._pausedText).catch(err => console.warn('resume speak failed:', err.message))
     } else {
       window.speechSynthesis.resume()
     }
@@ -73,6 +73,7 @@ export class EngineManager {
 
   cancel() {
     this._paused = false
+    this._pausedText = ''
     this._xunfei.cancel()
     window.speechSynthesis.cancel()
   }
