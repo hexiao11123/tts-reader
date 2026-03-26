@@ -3,17 +3,17 @@ const path = require('path')
 const fs = require('fs')
 
 function getConfigPath() {
-  return require('path').join(app.getPath('userData'), 'config.json')
+  return path.join(app.getPath('userData'), 'config.json')
 }
 
 function readConfig() {
   const p = getConfigPath()
-  if (!require('fs').existsSync(p)) return {}
-  try { return JSON.parse(require('fs').readFileSync(p, 'utf-8')) } catch { return {} }
+  if (!fs.existsSync(p)) return {}
+  try { return JSON.parse(fs.readFileSync(p, 'utf-8')) } catch { return {} }
 }
 
 function writeConfig(data) {
-  require('fs').writeFileSync(getConfigPath(), JSON.stringify(data, null, 2))
+  fs.writeFileSync(getConfigPath(), JSON.stringify(data, null, 2))
 }
 
 function createWindow() {
@@ -108,6 +108,7 @@ ipcMain.handle('get-config', () => {
 })
 
 ipcMain.handle('set-config', (_, patch) => {
+  if (patch.xunfei && !safeStorage.isEncryptionAvailable()) return { error: 'encryption_unavailable' }
   const cfg = readConfig()
   const encrypt = (v) => {
     if (!v || !safeStorage.isEncryptionAvailable()) return ''
