@@ -1,6 +1,7 @@
 // 依赖：window.CryptoJS（由 index.html 通过 <script> 加载 crypto-js）
 
 function buildAuthUrl(apiKey, apiSecret) {
+  if (typeof CryptoJS === 'undefined') throw new Error('CryptoJS 未加载，请检查 index.html')
   const host = 'tts-api.xfyun.cn'
   const path = '/v2/tts'
   const date = new Date().toUTCString()
@@ -59,9 +60,11 @@ export class XunfeiEngine {
       const TIMEOUT = 5000
       let connected = false
       let done = false
+      let rejected = false
+      const rejectOnce = (err) => { if (!rejected) { rejected = true; reject(err) } }
 
       const timer = setTimeout(() => {
-        if (!connected) { ws.close(); reject(new Error('连接超时')) }
+        if (!connected) { ws.close(); rejectOnce(new Error('连接超时')) }
       }, TIMEOUT)
 
       const ws = new WebSocket(url)
@@ -76,7 +79,7 @@ export class XunfeiEngine {
             aue: 'raw', auf: 'audio/L16;rate=16000',
             vcn, speed: this._mapSpeed(speed), volume: 50, pitch: 50, tte: 'UTF8',
           },
-          data: { status: 2, text: btoa(unescape(encodeURIComponent(text))) },
+          data: { status: 2, text: btoa(Array.from(new TextEncoder().encode(text), b => String.fromCharCode(b)).join('')) },
         }))
       }
 
@@ -98,8 +101,8 @@ export class XunfeiEngine {
         }
       }
 
-      ws.onerror = () => { if (!done) reject(new Error('WebSocket 错误')) }
-      ws.onclose = () => { clearTimeout(timer); if (!done && !this._cancelled) reject(new Error('连接意外关闭')) }
+      ws.onerror = () => { if (!done) rejectOnce(new Error('WebSocket 错误')) }
+      ws.onclose = () => { clearTimeout(timer); if (!done && !this._cancelled) rejectOnce(new Error('连接意外关闭')) }
     })
   }
 
