@@ -8,6 +8,9 @@
 </head>
 <body>
   <div class="app">
+    <!-- 通知条 -->
+    <div class="notification-bar" id="notificationBar"></div>
+
     <!-- 顶部文件栏 -->
     <div class="topbar">
       <span class="file-name" id="fileName">未打开文件</span>
@@ -24,6 +27,20 @@
 
     <!-- 播放器控制栏 -->
     <div class="player">
+      <!-- 音色行 -->
+      <div class="voice-row">
+        <div class="voice-selector-wrap">
+          <button class="btn-voice" id="btnVoice">音色：加载中…</button>
+          <!-- 向上弹出面板 -->
+          <div class="voice-panel" id="voicePanel" style="display:none">
+            <div class="voice-categories" id="voiceCategories"></div>
+            <div class="voice-divider"></div>
+            <div class="voice-list" id="voiceList"></div>
+          </div>
+        </div>
+        <button class="btn-settings" id="btnSettings" title="设置">⚙</button>
+      </div>
+
       <!-- 进度条 -->
       <div class="progress-container">
         <span class="time" id="currentTime">00:00</span>
@@ -37,10 +54,10 @@
       <!-- 控制按钮 -->
       <div class="controls">
         <button class="ctrl-btn" id="btnRestart" title="回到开头">⏮</button>
-        <button class="ctrl-btn" id="btnPrev" title="上一句">◀◀</button>
-        <button class="ctrl-btn btn-play" id="btnPlay" title="播放/暂停">▶</button>
-        <button class="ctrl-btn" id="btnNext" title="下一句">▶▶</button>
-        <button class="ctrl-btn" id="btnEnd" title="跳到结尾">⏭</button>
+        <button class="ctrl-btn" id="btnPrev"    title="上一句">◀◀</button>
+        <button class="ctrl-btn btn-play" id="btnPlay" title="播放">▶</button>
+        <button class="ctrl-btn" id="btnNext"    title="下一句">▶▶</button>
+        <button class="ctrl-btn" id="btnEnd"     title="跳到结尾">⏭</button>
 
         <div class="speed-control">
           <span class="speed-label">语速</span>
@@ -49,9 +66,26 @@
         </div>
       </div>
     </div>
+
+    <!-- 设置面板（覆盖层） -->
+    <div class="settings-overlay" id="settingsOverlay" style="display:none">
+      <div class="settings-panel">
+        <h3>讯飞语音设置</h3>
+        <label>AppID<input type="text" id="cfgAppId" placeholder="请输入 AppID" /></label>
+        <label>APIKey<input type="text" id="cfgApiKey" placeholder="请输入 APIKey" /></label>
+        <label>APISecret<input type="password" id="cfgApiSecret" placeholder="请输入 APISecret" /></label>
+        <div class="settings-actions">
+          <a class="btn-link" href="https://www.xfyun.cn/services/online_tts" target="_blank">去讯飞开放平台注册 ↗</a>
+          <button class="btn-save" id="btnSave">保存</button>
+        </div>
+        <div class="settings-status" id="settingsStatus">状态：○ 未配置</div>
+        <button class="btn-close-settings" id="btnCloseSettings">✕</button>
+      </div>
+    </div>
   </div>
 
   <script src="../node_modules/tesseract.js/dist/tesseract.min.js"></script>
+  <script src="../node_modules/crypto-js/crypto-js.js"></script>
   <script type="module" src="renderer.js"></script>
 </body>
 </html>
