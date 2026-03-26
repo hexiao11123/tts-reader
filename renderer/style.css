@@ -265,3 +265,212 @@ body {
   color: var(--accent-light);
   min-width: 32px;
 }
+
+/* ── 通知条 ─────────────────────────────────── */
+.notification-bar {
+  position: fixed;
+  top: 0; left: 0; right: 0;
+  background: #f38ba8;
+  color: #1e1e2e;
+  font-size: 13px;
+  text-align: center;
+  padding: 6px 16px;
+  z-index: 1000;
+  display: none;
+  animation: slideDown 0.2s ease;
+}
+.notification-bar.show { display: block; }
+@keyframes slideDown {
+  from { transform: translateY(-100%); }
+  to   { transform: translateY(0); }
+}
+
+/* ── 音色行 ──────────────────────────────────── */
+.voice-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 6px 0 4px;
+}
+
+.voice-selector-wrap {
+  position: relative;
+}
+
+.btn-voice {
+  background: var(--surface2);
+  border: none;
+  color: var(--accent-light);
+  font-size: 13px;
+  padding: 5px 12px;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+.btn-voice:hover { background: #3a3a52; }
+
+/* 向上弹出面板 */
+.voice-panel {
+  position: absolute;
+  bottom: calc(100% + 8px);
+  left: 0;
+  background: var(--surface2);
+  border-radius: 10px;
+  padding: 12px;
+  min-width: 280px;
+  box-shadow: 0 -4px 24px rgba(0,0,0,0.4);
+  z-index: 100;
+}
+
+.voice-categories {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 8px;
+}
+
+.voice-cat-btn {
+  background: var(--surface);
+  border: none;
+  color: var(--text-muted);
+  font-size: 12px;
+  padding: 4px 10px;
+  border-radius: 5px;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+}
+.voice-cat-btn.active,
+.voice-cat-btn:hover {
+  background: var(--accent);
+  color: #fff;
+}
+
+.voice-divider {
+  height: 1px;
+  background: rgba(255,255,255,0.06);
+  margin: 8px 0;
+}
+
+.voice-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.voice-item-btn {
+  background: var(--surface);
+  border: none;
+  color: var(--text);
+  font-size: 12px;
+  padding: 4px 10px;
+  border-radius: 5px;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+.voice-item-btn.active { background: var(--accent); color: #fff; }
+.voice-item-btn:hover  { background: #3a3a52; }
+
+/* ── 设置按钮 ────────────���────────────────────── */
+.btn-settings {
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  font-size: 16px;
+  cursor: pointer;
+  padding: 4px 8px;
+  border-radius: 6px;
+  transition: color 0.15s, background 0.15s;
+}
+.btn-settings:hover { color: var(--text); background: var(--surface2); }
+
+/* ── 设置覆盖层 ───────────────────────────────── */
+.settings-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.5);
+  z-index: 200;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.settings-panel {
+  background: var(--surface);
+  border-radius: 14px;
+  padding: 28px 32px;
+  width: 360px;
+  position: relative;
+  box-shadow: 0 8px 40px rgba(0,0,0,0.5);
+}
+
+.settings-panel h3 {
+  font-size: 16px;
+  color: var(--text);
+  margin-bottom: 20px;
+}
+
+.settings-panel label {
+  display: flex;
+  flex-direction: column;
+  font-size: 12px;
+  color: var(--text-muted);
+  margin-bottom: 12px;
+  gap: 4px;
+}
+
+.settings-panel input {
+  background: var(--surface2);
+  border: 1px solid rgba(255,255,255,0.07);
+  border-radius: 6px;
+  color: var(--text);
+  font-size: 13px;
+  padding: 7px 10px;
+  outline: none;
+  transition: border-color 0.15s;
+}
+.settings-panel input:focus { border-color: var(--accent); }
+
+.settings-actions {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-top: 16px;
+}
+
+.btn-link {
+  font-size: 12px;
+  color: var(--accent-light);
+  text-decoration: none;
+}
+.btn-link:hover { text-decoration: underline; }
+
+.btn-save {
+  background: var(--accent);
+  color: #fff;
+  border: none;
+  border-radius: 6px;
+  padding: 7px 20px;
+  font-size: 13px;
+  cursor: pointer;
+  transition: opacity 0.15s;
+}
+.btn-save:hover { opacity: 0.85; }
+
+.settings-status {
+  font-size: 12px;
+  color: var(--text-muted);
+  margin-top: 12px;
+}
+.settings-status.ok   { color: #a6e3a1; }
+.settings-status.fail { color: #f38ba8; }
+
+.btn-close-settings {
+  position: absolute;
+  top: 14px; right: 16px;
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  font-size: 16px;
+  cursor: pointer;
+}
+.btn-close-settings:hover { color: var(--text); }
