@@ -339,8 +339,8 @@ speedSlider.addEventListener('input', () => {
   speed = parseFloat(speedSlider.value)
   speedValue.textContent = speed.toFixed(1) + 'x'
   engine.setSpeed(speed)
+  const idx = currentIndex
   if (sentences.length > 0) {
-    const idx = currentIndex
     recalcDurations()
     elapsedBeforeCurrent = durations.slice(0, idx).reduce((a, b) => a + b, 0)
   }

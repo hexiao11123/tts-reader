@@ -86,7 +86,7 @@ export class XunfeiEngine {
       ws.onmessage = (e) => {
         if (this._cancelled) { ws.close(); resolve(); return }
         const msg = JSON.parse(e.data)
-        if (msg.code !== 0) { ws.close(); reject(new Error(`讯飞错误码 ${msg.code}`)); return }
+        if (msg.code !== 0) { ws.close(); rejectOnce(new Error(`讯飞错误码 ${msg.code}`)); return }
         if (msg.data?.audio) {
           const bin = atob(msg.data.audio)
           const arr = new Int16Array(bin.length / 2)
@@ -112,15 +112,13 @@ export class XunfeiEngine {
 
   // 凭证验证：发送单字合成，能收到 status=2 即为成功
   async testCredentials(config) {
-    const prev = this._config
-    this.setCredentials(config)
+    const testEngine = new XunfeiEngine()
+    testEngine.setCredentials(config)
     try {
-      await this.speak('测', 'xiaoyan', 1.0)
+      await testEngine.speak('测', 'xiaoyan', 1.0)
       return true
     } catch {
       return false
-    } finally {
-      this._config = prev
     }
   }
 }

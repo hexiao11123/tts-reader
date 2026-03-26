@@ -27,6 +27,7 @@ export class EngineManager {
       } catch (err) {
         console.warn('讯飞失败，回退系统语音:', err.message)
         this._onFallback(err.message)
+        this.setMode('system')
         await this._speakSystem(text)
       }
     } else {
