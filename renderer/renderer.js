@@ -20,7 +20,16 @@ let elapsedInCurrentSentenceAtPause = 0  // used by system TTS resume to preserv
 
 // ── 引擎管理��� ────────────────────────────────────────────────────────────
 const engine = new EngineManager({
-  onFallback: (msg) => showNotification(`讯飞连接失败，已切换系统语音（${msg}）`)
+  onFallback: () => showNotification('讯飞连接失败，已切换系统语音'),
+  onModeChange: (mode) => {
+    if (mode === 'system') {
+      // 回退到系统语音时，更新音色面板显示
+      activeCategoryId = 'system'
+      const sysCat = VOICE_CATEGORIES.find(c => c.id === 'system')
+      if (sysCat && sysCat.voices.length > 0) currentVcn = sysCat.voices[0].vcn
+      updateVoiceButton()
+    }
+  }
 })
 
 // ── DOM ──────────────────────────────────────────────────────────────────
@@ -284,11 +293,10 @@ function pauseResume() {
     engine.pause()
     isPaused = true; isPlaying = false
     stopProgressTick(); setPlayIcon(false)
-    elapsedInCurrentSentenceAtPause = (Date.now() - currentSentenceStart) / 1000
   } else if (isPaused) {
     isPaused = false; isPlaying = true
     setPlayIcon(true)
-    currentSentenceStart = Date.now() - elapsedInCurrentSentenceAtPause * 1000
+    currentSentenceStart = Date.now()
     elapsedInCurrentSentenceAtPause = 0
     startProgressTick()
     engine.resume()
