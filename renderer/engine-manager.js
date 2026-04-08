@@ -1,10 +1,12 @@
 import { XunfeiEngine } from './engine-xunfei.js'
+import { EdgeEngine } from './engine-edge.js'
 
 export class EngineManager {
   constructor({ onFallback, onModeChange }) {
     this._xunfei = new XunfeiEngine()
-    this._mode = 'system'       // 'xunfei' | 'system'
-    this._currentVcn = 'xiaoyan'
+    this._edge = new EdgeEngine()
+    this._mode = 'edge'        // 'edge' | 'xunfei' | 'system'
+    this._currentVcn = 'zh-CN-XiaoxiaoNeural'
     this._speed = 1.0
     this._paused = false
     this._pausedText = ''
@@ -23,7 +25,17 @@ export class EngineManager {
     this._paused = false
     this._pausedText = text
 
-    if (this._mode === 'xunfei') {
+    if (this._mode === 'edge') {
+      try {
+        await this._edge.speak(text, this._currentVcn, this._speed)
+      } catch (err) {
+        console.warn('Edge TTS 失败，回退系统语音:', err.message)
+        this.setMode('system')
+        this._onFallback(err.message)
+        this._onModeChange('system')
+        await this._speakSystem(text)
+      }
+    } else if (this._mode === 'xunfei') {
       try {
         await this._xunfei.speak(text, this._currentVcn, this._speed)
       } catch (err) {
@@ -62,7 +74,7 @@ export class EngineManager {
 
   pause() {
     this._paused = true
-    // speechSynthesis.pause() 在 Electron 里不可靠，统一用 cancel 停止
+    this._edge.cancel()
     if (this._systemTimer) { clearTimeout(this._systemTimer); this._systemTimer = null }
     this._xunfei.pause()
     window.speechSynthesis.cancel()
@@ -71,13 +83,14 @@ export class EngineManager {
   resume() {
     if (!this._paused) return
     this._paused = false
-    // 两种引擎都从句首重播（系统语音的 resume() 在 Electron 里同样不可靠）
+    // 所有引擎都从句首重播
     this.speak(this._pausedText).catch(err => console.warn('resume speak failed:', err.message))
   }
 
   cancel() {
     this._paused = false
     this._pausedText = ''
+    this._edge.cancel()
     if (this._systemTimer) { clearTimeout(this._systemTimer); this._systemTimer = null }
     this._xunfei.cancel()
     window.speechSynthesis.cancel()

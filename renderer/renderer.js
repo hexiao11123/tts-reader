@@ -14,13 +14,13 @@ let currentSentenceStart = 0
 let elapsedBeforeCurrent = 0
 let currentVcn = 'xiaoyan'
 let voicePanelOpen = false
-let activeCategoryId = 'gentle-female'
+let activeCategoryId = 'edge'
 let speakGen = 0  // generation counter, incremented on each new speak() call
 let elapsedInCurrentSentenceAtPause = 0  // used by system TTS resume to preserve progress
 
 // ── 引擎管理��� ────────────────────────────────────────────────────────────
 const engine = new EngineManager({
-  onFallback: () => showNotification('讯飞连接失败，已切换系统语音'),
+  onFallback: () => showNotification('Edge TTS 连接失败，已切换系统语音'),
   onModeChange: (mode) => {
     if (mode === 'system') {
       // 回退到系统语音时，更新音色面板显示
@@ -87,12 +87,12 @@ async function init() {
   if (sysCat.voices.length === 0) sysCat.voices = [{ vcn: '__system_default__', name: '系统默认' }]
 
   // Now findVoice works for all categories including system
-  currentVcn = cfg.lastVoice || 'xiaoyan'
+  currentVcn = cfg.lastVoice || 'zh-CN-XiaoxiaoNeural'
   const found = findVoice(currentVcn)
   if (found) {
     activeCategoryId = found.category.id
     engine.setVcn(currentVcn)
-    engine.setMode(found.category.id === 'system' ? 'system' : 'xunfei')
+    engine.setMode(found.category.engine || 'system')
   }
 
   renderVoicePanel()
@@ -132,14 +132,14 @@ function renderVoicePanel() {
     voiceListEl.appendChild(btn)
   }
 
-  // 讯飞凭证区域：选讯飞分类时显示
-  voiceCredSection.style.display = activeCategoryId === 'system' ? 'none' : 'block'
+  // 讯飞凭证区域：仅讯飞分类时显示
+  voiceCredSection.style.display = (cat?.engine === 'xunfei') ? 'block' : 'none'
 }
 
 function selectVoice(cat, voice) {
   currentVcn = voice.vcn
   engine.setVcn(voice.vcn)
-  engine.setMode(cat.id === 'system' ? 'system' : 'xunfei')
+  engine.setMode(cat.engine || 'system')
   updateVoiceButton()
   window.electronAPI.setConfig({ lastVoice: voice.vcn })
 }

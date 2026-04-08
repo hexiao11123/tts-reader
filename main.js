@@ -102,9 +102,31 @@ ipcMain.handle('get-config', () => {
       apiKey:    decrypt(xf.apiKey),
       apiSecret: decrypt(xf.apiSecret),
     },
-    lastVoice: cfg.lastVoice || 'xiaoyan',
+    lastVoice: cfg.lastVoice || 'zh-CN-XiaoxiaoNeural',
     lastSpeed: cfg.lastSpeed || 1.0,
   }
+})
+
+ipcMain.handle('edge-tts', async (_, { text, voice, rate }) => {
+  const { MsEdgeTTS, OUTPUT_FORMAT } = require('msedge-tts')
+
+  const tts = new MsEdgeTTS()
+  await tts.setMetadata(voice, OUTPUT_FORMAT.AUDIO_24KHZ_48KBITRATE_MONO_MP3)
+
+  // rate is a percentage offset: 0 = normal, +50 = 1.5x, -50 = 0.5x
+  const rateStr = rate >= 0 ? `+${rate}%` : `${rate}%`
+  const ssml = `<speak version='1.0' xmlns='http://www.w3.org/2001/10/synthesis' xml:lang='zh-CN'>` +
+    `<voice name='${voice}'><prosody rate='${rateStr}'>${text}</prosody></voice></speak>`
+
+  const { audioStream } = tts._rawSSMLRequest(ssml)
+  const chunks = []
+  await new Promise((resolve, reject) => {
+    audioStream.on('data', d => chunks.push(d))
+    audioStream.on('end', resolve)
+    audioStream.on('error', reject)
+  })
+  tts.close()
+  return Buffer.concat(chunks).toString('base64')
 })
 
 ipcMain.handle('set-config', (_, patch) => {

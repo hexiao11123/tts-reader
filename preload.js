@@ -4,4 +4,5 @@ contextBridge.exposeInMainWorld('electronAPI', {
   openFile:  () => ipcRenderer.invoke('open-file'),
   getConfig: () => ipcRenderer.invoke('get-config'),
   setConfig: (patch) => ipcRenderer.invoke('set-config', patch),
+  edgeTTS:   (params) => ipcRenderer.invoke('edge-tts', params),
 })
