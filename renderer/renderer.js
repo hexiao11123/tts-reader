@@ -20,7 +20,7 @@ let elapsedInCurrentSentenceAtPause = 0  // used by system TTS resume to preserv
 
 // ── 引擎管理��� ────────────────────────────────────────────────────────────
 const engine = new EngineManager({
-  onFallback: () => showNotification('Edge TTS 连接失败，已切换系统语音'),
+  onFallback: (errMsg) => showNotification('Edge TTS 失败: ' + errMsg),
   onModeChange: (mode) => {
     if (mode === 'system') {
       // 回退到系统语音时，更新音色面板显示
@@ -277,6 +277,7 @@ async function speak(index) {
   currentSentenceStart = Date.now()
   startProgressTick()
 
+  if (index + 1 < sentences.length) engine.prefetch(sentences[index + 1])
   await engine.speak(sentences[index])
 
   if (gen !== speakGen) return  // a newer speak() was called, abort this chain

@@ -3,7 +3,29 @@ export class EdgeEngine {
     this._audio = null
     this._pendingResolve = null
     this._gen = 0
+    this._cache = new Map()  // key: `${voice}|${rate}|${text}` → Promise<base64>
   }
+
+  _key(text, voice, ratePercent) { return `${voice}|${ratePercent}|${text}` }
+
+  _fetch(text, voice, ratePercent) {
+    const key = this._key(text, voice, ratePercent)
+    let p = this._cache.get(key)
+    if (!p) {
+      p = window.electronAPI.edgeTTS({ text, voice, rate: ratePercent })
+        .catch(err => { this._cache.delete(key); throw err })
+      this._cache.set(key, p)
+    }
+    return p
+  }
+
+  prefetch(text, voice, speed) {
+    if (!text) return
+    const ratePercent = Math.round((speed - 1) * 100)
+    this._fetch(text, voice, ratePercent).catch(() => {})
+  }
+
+  clearCache() { this._cache.clear() }
 
   async speak(text, voice, speed) {
     // Convert speed multiplier to percentage offset (1.0 → 0%, 1.5 → +50%, 0.5 → -50%)
@@ -12,7 +34,7 @@ export class EdgeEngine {
 
     let base64
     try {
-      base64 = await window.electronAPI.edgeTTS({ text, voice, rate: ratePercent })
+      base64 = await this._fetch(text, voice, ratePercent)
     } catch (err) {
       if (myGen !== this._gen) return  // cancelled while fetching — suppress error
       throw err

@@ -16,6 +16,7 @@
   "build": {
     "appId": "com.ttsreader.app",
     "productName": "朗读器",
+    "artifactName": "tts-reader-${version}-${arch}-${os}.${ext}",
     "files": [
       "main.js",
       "preload.js",
@@ -35,6 +36,7 @@
       ]
     },
     "win": {
+      "executableName": "tts-reader",
       "target": [
         {
           "target": "nsis",

@@ -17,9 +17,19 @@ export class EngineManager {
   }
 
   setMode(mode) { this._mode = mode }
-  setVcn(vcn)   { this._currentVcn = vcn }
-  setSpeed(s)   { this._speed = s }
+  setVcn(vcn)   {
+    if (vcn !== this._currentVcn) this._edge.clearCache()
+    this._currentVcn = vcn
+  }
+  setSpeed(s)   {
+    if (s !== this._speed) this._edge.clearCache()
+    this._speed = s
+  }
   setCredentials(cfg) { this._xunfei.setCredentials(cfg) }
+
+  prefetch(text) {
+    if (this._mode === 'edge') this._edge.prefetch(text, this._currentVcn, this._speed)
+  }
 
   async speak(text) {
     this._paused = false
