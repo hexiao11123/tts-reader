@@ -1,6 +1,9 @@
 const { app, BrowserWindow, ipcMain, dialog, safeStorage } = require('electron')
 const path = require('path')
 const fs = require('fs')
+const { execFile } = require('child_process')
+const util = require('util')
+const execFileAsync = util.promisify(execFile)
 
 function getConfigPath() {
   return path.join(app.getPath('userData'), 'config.json')
@@ -18,9 +21,9 @@ function writeConfig(data) {
 
 function createWindow() {
   const win = new BrowserWindow({
-    width: 900,
+    width: 1100,
     height: 700,
-    minWidth: 700,
+    minWidth: 800,
     minHeight: 500,
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
@@ -46,47 +49,91 @@ app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') app.quit()
 })
 
-// 打开文件对话框
+// ── 文件解析 ────────────────────────────────────────────────────────────────
+// 通过文件头判断真实格式（扩展名可能被改名，例如 .wps 实为 docx）
+function detectFormat(buf) {
+  if (buf.length >= 8 && buf[0] === 0xd0 && buf[1] === 0xcf && buf[2] === 0x11 && buf[3] === 0xe0) return 'ole2' // .doc / 老 .wps
+  if (buf.length >= 4 && buf[0] === 0x50 && buf[1] === 0x4b) return 'zip'  // .docx / 新 .wps
+  return 'plain'
+}
+
+async function parseDocx(filePath) {
+  const mammoth = require('mammoth')
+  const result = await mammoth.extractRawText({ path: filePath })
+  return result.value
+}
+
+// textutil 转纯文本（macOS 自带，支持 .doc，保留段落空行结构）
+async function parseViaTextutil(filePath) {
+  const { stdout } = await execFileAsync('textutil', ['-convert', 'txt', '-stdout', filePath])
+  return stdout
+}
+
+async function parseFile(filePath) {
+  const ext = path.extname(filePath).toLowerCase()
+  const fileName = path.basename(filePath)
+  let text = ''
+
+  if (ext === '.txt') {
+    text = fs.readFileSync(filePath, 'utf-8')
+  } else if (ext === '.pdf') {
+    const buffer = fs.readFileSync(filePath)
+    const pdfParse = require('pdf-parse')
+    const data = await pdfParse(buffer)
+    text = data.text.trim()
+    // 文字太少说明是扫描版图片 PDF，交给渲染进程做 OCR
+    if (text.length < 100) {
+      return { fileName, needsOCR: true, buffer: Array.from(buffer) }
+    }
+  } else if (ext === '.docx' || ext === '.doc' || ext === '.wps') {
+    const buffer = fs.readFileSync(filePath)
+    const fmt = detectFormat(buffer)
+    if (ext === '.docx' || fmt === 'zip') {
+      // 真 .docx，或被改名成 .doc/.wps 的 docx（zip 容器）→ mammoth
+      text = await parseDocx(filePath)
+    } else if (fmt === 'ole2') {
+      // 真 .doc 或老版 .wps（OLE2 二进制）→ textutil
+      if (ext === '.wps') {
+        // textutil 不识别 .wps 扩展名，拷贝为临时 .doc 再转
+        const tmp = path.join(app.getPath('temp'), `tts_${Date.now()}_${Math.random().toString(36).slice(2)}.doc`)
+        fs.copyFileSync(filePath, tmp)
+        try { text = await parseViaTextutil(tmp) }
+        finally { try { fs.unlinkSync(tmp) } catch {} }
+      } else {
+        text = await parseViaTextutil(filePath)
+      }
+    } else {
+      throw new Error('无法识别的文档内容（既不是 Word 也不是 WPS）')
+    }
+  } else {
+    throw new Error('不支持的格式：' + (ext || '未知'))
+  }
+
+  return { fileName, text: (text || '').trim() }
+}
+
+// 打开文件对话框（支持多选）
 ipcMain.handle('open-file', async () => {
   const { canceled, filePaths } = await dialog.showOpenDialog({
     filters: [
-      { name: '支持的文档', extensions: ['txt', 'pdf', 'docx'] },
+      { name: '所有支持的文档', extensions: ['txt', 'pdf', 'doc', 'docx', 'wps'] },
       { name: '文本文件', extensions: ['txt'] },
       { name: 'PDF 文件', extensions: ['pdf'] },
-      { name: 'Word 文档', extensions: ['docx'] },
+      { name: 'Word / WPS 文档', extensions: ['doc', 'docx', 'wps'] },
     ],
-    properties: ['openFile'],
+    properties: ['openFile', 'multiSelections'],
   })
   if (canceled || filePaths.length === 0) return null
 
-  const filePath = filePaths[0]
-  const ext = path.extname(filePath).toLowerCase()
-  const fileName = path.basename(filePath)
-
-  try {
-    let text = ''
-
-    if (ext === '.txt') {
-      text = fs.readFileSync(filePath, 'utf-8')
-    } else if (ext === '.docx') {
-      const mammoth = require('mammoth')
-      const result = await mammoth.extractRawText({ path: filePath })
-      text = result.value
-    } else if (ext === '.pdf') {
-      const pdfParse = require('pdf-parse')
-      const buffer = fs.readFileSync(filePath)
-      const data = await pdfParse(buffer)
-      text = data.text.trim()
-      // 文字太少说明是扫描版图片 PDF，交给渲染进程做 OCR
-      if (text.length < 100) {
-        return { fileName, needsOCR: true, buffer: Array.from(buffer) }
-      }
+  const results = []
+  for (const filePath of filePaths) {
+    try {
+      results.push(await parseFile(filePath))
+    } catch (err) {
+      results.push({ fileName: path.basename(filePath), error: err.message })
     }
-
-    return { fileName, text: text.trim() }
-  } catch (err) {
-    return { error: err.message }
   }
+  return results
 })
 
 ipcMain.handle('get-config', () => {
@@ -104,6 +151,7 @@ ipcMain.handle('get-config', () => {
     },
     lastVoice: cfg.lastVoice || 'zh-CN-XiaoxiaoNeural',
     lastSpeed: cfg.lastSpeed || 1.0,
+    lastFontSize: cfg.lastFontSize || 17,
   }
 })
 
@@ -145,6 +193,7 @@ ipcMain.handle('set-config', (_, patch) => {
   }
   if (patch.lastVoice !== undefined) cfg.lastVoice = patch.lastVoice
   if (patch.lastSpeed !== undefined) cfg.lastSpeed = patch.lastSpeed
+  if (patch.lastFontSize !== undefined) cfg.lastFontSize = patch.lastFontSize
   writeConfig(cfg)
   return { ok: true }
 })

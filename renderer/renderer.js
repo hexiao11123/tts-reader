@@ -2,28 +2,35 @@ import { VOICE_CATEGORIES, findVoice } from './voices.js'
 import { EngineManager } from './engine-manager.js'
 
 // ── 状态 ─────────────────────────────────────────────────────────────────
-let sentences = []
-let durations  = []
-let totalDuration = 0
-let currentIndex = 0
+let files = []             // [{ id, name, text, paragraphs, sentences, durations, totalDuration, blocks, sentenceToBlock }]
+let activeFileId = null
+let nextFileId = 1
+
+let currentIndex = 0       // 当前全局句索引（当前文件内）
 let isPlaying = false
 let isPaused  = false
 let speed = 1.0
+let fontSize = 17          // 正文字号（px）
+const DEFAULT_FONT_SIZE = 17
+const MIN_FONT_SIZE = 12
+const MAX_FONT_SIZE = 24
 let progressInterval = null
+let blockHighlightTimer = null
 let currentSentenceStart = 0
 let elapsedBeforeCurrent = 0
+let speakGen = 0
 let currentVcn = 'xiaoyan'
 let voicePanelOpen = false
 let activeCategoryId = 'edge'
-let speakGen = 0  // generation counter, incremented on each new speak() call
-let elapsedInCurrentSentenceAtPause = 0  // used by system TTS resume to preserve progress
 
-// ── 引擎管理��� ────────────────────────────────────────────────────────────
+// 单块最大字符数：超过则拆分，避免 Edge TTS 单次请求过长
+const MAX_BLOCK_CHARS = 400
+
+// ── 引擎管理 ──────────────────────────────────────────────────────────────
 const engine = new EngineManager({
   onFallback: (errMsg) => showNotification('Edge TTS 失败: ' + errMsg),
   onModeChange: (mode) => {
     if (mode === 'system') {
-      // 回退到系统语音时，更新音色面板显示
       activeCategoryId = 'system'
       const sysCat = VOICE_CATEGORIES.find(c => c.id === 'system')
       if (sysCat && sysCat.voices.length > 0) currentVcn = sysCat.voices[0].vcn
@@ -47,8 +54,14 @@ const progressThumb= document.getElementById('progressThumb')
 const currentTimeEl= document.getElementById('currentTime')
 const totalTimeEl  = document.getElementById('totalTime')
 const fileNameEl   = document.getElementById('fileName')
+const textArea     = document.getElementById('textArea')
 const sentencesEl  = document.getElementById('sentences')
 const placeholder  = document.getElementById('placeholder')
+const fileSidebar  = document.getElementById('fileSidebar')
+const fileListEl   = document.getElementById('fileList')
+const btnFontMinus = document.getElementById('btnFontMinus')
+const btnFontPlus  = document.getElementById('btnFontPlus')
+const fontSizeValue= document.getElementById('fontSizeValue')
 const btnVoice     = document.getElementById('btnVoice')
 const voicePanel   = document.getElementById('voicePanel')
 const voiceCatsEl  = document.getElementById('voiceCategories')
@@ -77,8 +90,9 @@ async function init() {
   speedSlider.value = speed
   speedValue.textContent = speed.toFixed(1) + 'x'
   engine.setSpeed(speed)
+  fontSize = cfg.lastFontSize || 17
+  applyFontSize()
 
-  // Fill system voices FIRST
   const sysVoices = window.speechSynthesis.getVoices()
   const sysCat = VOICE_CATEGORIES.find(c => c.id === 'system')
   sysCat.voices = sysVoices
@@ -86,7 +100,6 @@ async function init() {
     .map(v => ({ vcn: v.name, name: v.name.replace(/^Microsoft /, '').split(' ')[0] }))
   if (sysCat.voices.length === 0) sysCat.voices = [{ vcn: '__system_default__', name: '系统默认' }]
 
-  // Now findVoice works for all categories including system
   currentVcn = cfg.lastVoice || 'zh-CN-XiaoxiaoNeural'
   const found = findVoice(currentVcn)
   if (found) {
@@ -105,7 +118,6 @@ init()
 
 // ── 音色面板 ──────────────────────────────────────────────────────────────
 function renderVoicePanel() {
-  // 一级分类
   voiceCatsEl.innerHTML = ''
   for (const cat of VOICE_CATEGORIES) {
     const btn = document.createElement('button')
@@ -118,7 +130,6 @@ function renderVoicePanel() {
     voiceCatsEl.appendChild(btn)
   }
 
-  // 二级音色
   voiceListEl.innerHTML = ''
   const cat = VOICE_CATEGORIES.find(c => c.id === activeCategoryId)
   for (const v of cat.voices) {
@@ -132,7 +143,6 @@ function renderVoicePanel() {
     voiceListEl.appendChild(btn)
   }
 
-  // 讯飞凭证区域：仅讯飞分类时显示
   voiceCredSection.style.display = (cat?.engine === 'xunfei') ? 'block' : 'none'
 }
 
@@ -154,7 +164,6 @@ async function openVoicePanel() {
   voicePanelOpen = true
   voicePanel.style.display = 'block'
   renderVoicePanel()
-  // 加载已保存的讯飞凭证
   const cfg = await window.electronAPI.getConfig()
   vpAppId.value     = cfg.xunfei.appId     || ''
   vpApiKey.value    = cfg.xunfei.apiKey    || ''
@@ -172,7 +181,6 @@ btnVoice.addEventListener('click', (e) => {
 document.addEventListener('click', () => { if (voicePanelOpen) closeVoicePanel() })
 voicePanel.addEventListener('click', e => e.stopPropagation())
 
-// 音色面板内讯飞凭证保存
 vpSave.addEventListener('click', async () => {
   const cfg = { appId: vpAppId.value.trim(), apiKey: vpApiKey.value.trim(), apiSecret: vpApiSecret.value.trim() }
   await window.electronAPI.setConfig({ xunfei: cfg })
@@ -211,51 +219,109 @@ btnSave.addEventListener('click', async () => {
   settingsStatus.className = 'settings-status ' + (ok ? 'ok' : 'fail')
 })
 
-// ── 文本切分 ─────────────────────��────────────────────────────────────────
-function splitSentences(text) {
-  return text
-    .replace(/\r\n/g, '\n').replace(/\r/g, '\n')
-    .split(/(?<=[。！？…\n\.!?]+)/)
-    .map(s => s.trim()).filter(s => s.length > 0)
+// ── 文本解析（保留段落结构） ───────────────────────────────────────────────
+function parseDocumentText(text) {
+  // 1. 规范化换行
+  text = text.replace(/\r\n/g, '\n').replace(/\r/g, '\n')
+  // 2. 按空行切分段落（连续两个及以上换行 = 段落边界）
+  const paraTexts = text.split(/\n\s*\n+/).map(p => p.trim()).filter(p => p.length > 0)
+  // 3. 段落内按句末标点/换行切句
+  const paragraphs = paraTexts.map(pt => ({
+    text: pt,
+    sentences: pt
+      .split(/(?<=[。！？；…\n\.!?]+)/)
+      .map(s => s.trim())
+      .filter(s => s.length > 0)
+  }))
+  // 4. 展平全局句
+  const sentences = []
+  for (const p of paragraphs) for (const s of p.sentences) sentences.push(s)
+  return { paragraphs, sentences }
 }
 
 function estimateDuration(text, rate) {
   return (text.replace(/\s/g, '').length || 1) / (4.5 * rate)
 }
 
-// ── 加载文本 ──────────────────────────────────────────────────────────────
-function loadText(text) {
-  sentences = splitSentences(text)
-  recalcDurations()
-  renderSentences()
-  currentIndex = 0
-  elapsedBeforeCurrent = 0
-  updateProgressUI(0)
-  setPlayIcon(false)
-  isPlaying = false
-  isPaused  = false
-  stopProgressTick()
-  btnPlay.disabled = false
+function mergeSentences(list) {
+  let out = ''
+  for (const s of list) {
+    if (out && /[.!?]$/.test(out)) out += ' '  // 英文标点后补空格
+    out += s
+  }
+  return out
 }
 
-function recalcDurations() {
-  durations = sentences.map(s => estimateDuration(s, speed))
-  totalDuration = durations.reduce((a, b) => a + b, 0)
-  totalTimeEl.textContent = formatTime(totalDuration)
+// 构建朗读块：每个块 = 一个段落（超长段落再按字符数拆分），块内句子合并一次合成
+function buildBlocks(paragraphs, sentences) {
+  const blocks = []
+  const sentenceToBlock = new Array(sentences.length).fill(0)
+  let gi = 0
+
+  for (const p of paragraphs) {
+    const startGi = gi
+    const endGi = gi + p.sentences.length
+    let curSents = []
+    let curChars = 0
+    const pushBlock = () => {
+      if (curSents.length === 0) return
+      const text = mergeSentences(curSents.map(i => sentences[i]))
+      blocks.push({ text, sents: curSents.slice() })
+      curSents = []
+      curChars = 0
+    }
+    for (let i = startGi; i < endGi; i++) {
+      const c = sentences[i].length
+      if (curSents.length > 0 && curChars + c > MAX_BLOCK_CHARS) pushBlock()
+      curSents.push(i)
+      curChars += c
+    }
+    pushBlock()
+    gi = endGi
+  }
+
+  blocks.forEach((b, bi) => { for (const gi of b.sents) sentenceToBlock[gi] = bi })
+  return { blocks, sentenceToBlock }
 }
 
-// ── 渲染句子 ─────────────────────────────────────────────────���────────────
-function renderSentences() {
+function buildFile(name, text) {
+  const parsed = parseDocumentText(text)
+  const durations = parsed.sentences.map(s => estimateDuration(s, speed))
+  const totalDuration = durations.reduce((a, b) => a + b, 0)
+  const { blocks, sentenceToBlock } = buildBlocks(parsed.paragraphs, parsed.sentences)
+  blocks.forEach(b => { b.duration = b.sents.reduce((a, i) => a + durations[i], 0) })
+  return {
+    id: nextFileId++, name, text,
+    paragraphs: parsed.paragraphs,
+    sentences: parsed.sentences,
+    durations, totalDuration, blocks, sentenceToBlock,
+  }
+}
+
+function getActiveFile() {
+  return files.find(f => f.id === activeFileId) || null
+}
+
+// ── 渲染（段落结构） ───────────────────────────────────────────────────────
+function renderDocument(file) {
   placeholder.style.display = 'none'
   sentencesEl.innerHTML = ''
-  sentences.forEach((s, i) => {
-    const span = document.createElement('span')
-    span.className = 'sentence'
-    span.textContent = s + ' '
-    span.dataset.index = i
-    span.addEventListener('click', () => jumpToIndex(i))
-    sentencesEl.appendChild(span)
-  })
+  let gi = 0
+  for (const p of file.paragraphs) {
+    const paraDiv = document.createElement('div')
+    paraDiv.className = 'para'
+    for (const s of p.sentences) {
+      const span = document.createElement('span')
+      span.className = 'sentence'
+      span.textContent = s + ' '
+      span.dataset.index = gi
+      const idx = gi  // 捕获当前句索引，避免闭包共享变量陷阱
+      span.addEventListener('click', () => jumpToIndex(idx))
+      paraDiv.appendChild(span)
+      gi++
+    }
+    sentencesEl.appendChild(paraDiv)
+  }
 }
 
 function highlightSentence(index) {
@@ -264,59 +330,114 @@ function highlightSentence(index) {
   if (el) { el.classList.add('active'); el.scrollIntoView({ behavior: 'smooth', block: 'center' }) }
 }
 
-// ── 播放引擎 ───────────────────────────────────────────────────���──────��───
-async function speak(index) {
-  if (index >= sentences.length) { stopAll(); updateProgressUI(totalDuration); return }
+// ── 播放引擎（块级） ───────────────────────────────────────────────────────
+async function playBlocks(bi, firstBlockOverride) {
+  const file = getActiveFile()
+  if (!file) return
+  if (bi >= file.blocks.length) { stopAll(); updateProgressUI(file.totalDuration); return }
 
   engine.cancel()
-  const gen = ++speakGen  // capture current generation
-  currentIndex = index
-  highlightSentence(index)
+  const gen = ++speakGen
+  const block = firstBlockOverride || file.blocks[bi]
+
+  currentIndex = block.sents[0]
   isPlaying = true; isPaused = false
   setPlayIcon(true)
   currentSentenceStart = Date.now()
   startProgressTick()
 
-  if (index + 1 < sentences.length) engine.prefetch(sentences[index + 1])
-  await engine.speak(sentences[index])
+  // 预取下一块（减少块间停顿）
+  if (bi + 1 < file.blocks.length) engine.prefetch(file.blocks[bi + 1].text)
 
-  if (gen !== speakGen) return  // a newer speak() was called, abort this chain
+  startBlockHighlight(block)
+
+  await engine.speak(block.text)
+
+  if (gen !== speakGen) return
+  stopBlockHighlight()
   if (isPlaying && !isPaused) {
     stopProgressTick()
-    elapsedBeforeCurrent += durations[index]
-    speak(index + 1)
+    elapsedBeforeCurrent += block.duration
+    playBlocks(bi + 1)
+  }
+}
+
+function startBlockHighlight(block) {
+  stopBlockHighlight()
+  const file = getActiveFile()
+  if (!file) return
+  let lastIdx = -1
+  const tick = () => {
+    const elapsed = (Date.now() - currentSentenceStart) / 1000
+    let acc = 0
+    for (const gi of block.sents) {
+      const d = file.durations[gi]
+      if (elapsed < acc + d) {
+        if (gi !== lastIdx) { highlightSentence(gi); lastIdx = gi; currentIndex = gi }
+        return
+      }
+      acc += d
+    }
+    const last = block.sents[block.sents.length - 1]
+    if (last !== lastIdx) { highlightSentence(last); lastIdx = last; currentIndex = last }
+  }
+  tick()
+  blockHighlightTimer = setInterval(tick, 80)
+}
+
+function stopBlockHighlight() {
+  if (blockHighlightTimer) { clearInterval(blockHighlightTimer); blockHighlightTimer = null }
+}
+
+function jumpToIndex(gi) {
+  const file = getActiveFile()
+  if (!file || file.sentences.length === 0) return
+  gi = Math.max(0, Math.min(gi, file.sentences.length - 1))
+  elapsedBeforeCurrent = file.durations.slice(0, gi).reduce((a, b) => a + b, 0)
+
+  const bi = file.sentenceToBlock[gi]
+  const block = file.blocks[bi]
+  const pos = block.sents.indexOf(gi)
+  if (pos === 0) {
+    playBlocks(bi)
+  } else {
+    const restSents = block.sents.slice(pos)
+    const head = {
+      text: mergeSentences(restSents.map(i => file.sentences[i])),
+      sents: restSents,
+      duration: restSents.reduce((a, i) => a + file.durations[i], 0),
+    }
+    playBlocks(bi, head)
   }
 }
 
 function pauseResume() {
-  if (!isPlaying && !isPaused && sentences.length > 0) { speak(currentIndex); return }
+  const file = getActiveFile()
+  if (!isPlaying && !isPaused) {
+    if (file && file.sentences.length > 0) {
+      if (currentIndex >= file.sentences.length) currentIndex = 0
+      jumpToIndex(currentIndex)
+    }
+    return
+  }
   if (isPlaying && !isPaused) {
     engine.pause()
     isPaused = true; isPlaying = false
-    stopProgressTick(); setPlayIcon(false)
+    stopProgressTick(); stopBlockHighlight(); setPlayIcon(false)
   } else if (isPaused) {
     isPaused = false; isPlaying = true
     setPlayIcon(true)
-    currentSentenceStart = Date.now()
-    elapsedInCurrentSentenceAtPause = 0
-    startProgressTick()
-    engine.resume()
+    jumpToIndex(currentIndex)  // 从当前句恢复
   }
 }
 
 function stopAll() {
   engine.cancel()
   isPlaying = false; isPaused = false
-  stopProgressTick(); setPlayIcon(false)
+  stopProgressTick(); stopBlockHighlight(); setPlayIcon(false)
 }
 
-function jumpToIndex(index) {
-  stopProgressTick()
-  elapsedBeforeCurrent = durations.slice(0, index).reduce((a, b) => a + b, 0)
-  speak(index)
-}
-
-// ── 进度条 ─────────────────���──────────────────────────────────────────────
+// ── 进度条 ────────────────────────────────────────────────────────────────
 function startProgressTick() {
   stopProgressTick()
   progressInterval = setInterval(tickProgress, 100)
@@ -325,12 +446,14 @@ function stopProgressTick() {
   if (progressInterval) { clearInterval(progressInterval); progressInterval = null }
 }
 function tickProgress() {
-  if (totalDuration === 0) return
+  const file = getActiveFile()
+  if (!file || file.totalDuration === 0) return
   const total = elapsedBeforeCurrent + (Date.now() - currentSentenceStart) / 1000
-  updateProgressUI(Math.min(total, totalDuration))
+  updateProgressUI(Math.min(total, file.totalDuration))
 }
 function updateProgressUI(elapsed) {
-  const pct = totalDuration > 0 ? (elapsed / totalDuration) * 100 : 0
+  const file = getActiveFile()
+  const pct = file && file.totalDuration > 0 ? (elapsed / file.totalDuration) * 100 : 0
   progressFill.style.width = pct + '%'
   progressThumb.style.left = pct + '%'
   currentTimeEl.textContent = formatTime(elapsed)
@@ -342,58 +465,116 @@ document.addEventListener('mousemove', (e) => { if (isDragging) seekTo(e) })
 document.addEventListener('mouseup', () => { isDragging = false })
 
 function seekTo(e) {
+  const file = getActiveFile()
+  if (!file) return
   const rect = progressBar.getBoundingClientRect()
   const pct = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width))
-  const targetTime = pct * totalDuration
+  const targetTime = pct * file.totalDuration
   let acc = 0, targetIndex = 0
-  for (let i = 0; i < durations.length; i++) {
-    if (acc + durations[i] > targetTime) { targetIndex = i; break }
-    acc += durations[i]; targetIndex = i + 1
+  for (let i = 0; i < file.durations.length; i++) {
+    if (acc + file.durations[i] > targetTime) { targetIndex = i; break }
+    acc += file.durations[i]; targetIndex = i + 1
   }
-  targetIndex = Math.min(targetIndex, sentences.length - 1)
-  elapsedBeforeCurrent = durations.slice(0, targetIndex).reduce((a, b) => a + b, 0)
+  targetIndex = Math.min(targetIndex, file.sentences.length - 1)
+  elapsedBeforeCurrent = file.durations.slice(0, targetIndex).reduce((a, b) => a + b, 0)
   updateProgressUI(targetTime)
-  if (isPlaying || isPaused) speak(targetIndex)
+  if (isPlaying || isPaused) jumpToIndex(targetIndex)
   else { currentIndex = targetIndex; highlightSentence(targetIndex) }
+}
+
+// ── 多文件管理 ────────────────────────────────────────────────────────────
+function renderFileList() {
+  fileListEl.innerHTML = ''
+  for (const f of files) {
+    const item = document.createElement('div')
+    item.className = 'file-item' + (f.id === activeFileId ? ' active' : '')
+    item.textContent = f.name
+    item.title = f.name
+    item.addEventListener('click', () => activateFile(f.id))
+    fileListEl.appendChild(item)
+  }
+  fileSidebar.style.display = files.length > 0 ? 'flex' : 'none'
+}
+
+function activateFile(id) {
+  stopAll()
+  activeFileId = id
+  const file = getActiveFile()
+  if (!file) return
+  fileNameEl.textContent = file.name
+  fileNameEl.classList.add('loaded')
+  renderDocument(file)
+  currentIndex = 0
+  elapsedBeforeCurrent = 0
+  totalTimeEl.textContent = formatTime(file.totalDuration)
+  updateProgressUI(0)
+  setPlayIcon(false)
+  isPlaying = false; isPaused = false
+  btnPlay.disabled = false
+  renderFileList()
+}
+
+async function addFiles(results) {
+  for (const r of results) {
+    if (r.error) { showNotification(`解析失败 ${r.fileName}: ${r.error}`); continue }
+    if (r.needsOCR) {
+      const text = await runOCR(r.buffer, r.fileName)
+      if (text !== null) files.push(buildFile(r.fileName, text))
+    } else {
+      files.push(buildFile(r.fileName, r.text))
+    }
+  }
+  renderFileList()
+  if (files.length > 0 && !activeFileId) {
+    activateFile(files[0].id)
+  }
 }
 
 // ── 控制按钮 ──────────────────────────────────────────────────────────────
 btnOpen.addEventListener('click', async () => {
-  const result = await window.electronAPI.openFile()
-  if (!result) return
-  if (result.error) { alert('文件解析失败：' + result.error); return }
-  fileNameEl.textContent = result.fileName
-  fileNameEl.classList.add('loaded')
-  if (result.needsOCR) await handleOCR(result.buffer, result.fileName)
-  else loadText(result.text)
+  const results = await window.electronAPI.openFile()
+  if (!results || results.length === 0) return
+  await addFiles(results)
 })
 
 btnPlay.addEventListener('click', pauseResume)
 btnPrev.addEventListener('click', () => jumpToIndex(Math.max(0, currentIndex - 1)))
-btnNext.addEventListener('click', () => jumpToIndex(Math.min(sentences.length - 1, currentIndex + 1)))
+btnNext.addEventListener('click', () => {
+  const file = getActiveFile()
+  if (file) jumpToIndex(Math.min(file.sentences.length - 1, currentIndex + 1))
+})
 btnRestart.addEventListener('click', () => jumpToIndex(0))
 btnEnd.addEventListener('click', () => {
-  stopAll(); updateProgressUI(totalDuration)
-  currentIndex = sentences.length - 1; highlightSentence(currentIndex)
+  const file = getActiveFile()
+  if (!file) return
+  stopAll()
+  updateProgressUI(file.totalDuration)
+  currentIndex = file.sentences.length - 1
+  highlightSentence(currentIndex)
 })
 
 speedSlider.addEventListener('input', () => {
   speed = parseFloat(speedSlider.value)
   speedValue.textContent = speed.toFixed(1) + 'x'
   engine.setSpeed(speed)
-  const idx = currentIndex
-  if (sentences.length > 0) {
-    recalcDurations()
-    elapsedBeforeCurrent = durations.slice(0, idx).reduce((a, b) => a + b, 0)
+  const file = getActiveFile()
+  if (file) {
+    file.durations = file.sentences.map(s => estimateDuration(s, speed))
+    file.totalDuration = file.durations.reduce((a, b) => a + b, 0)
+    const { blocks, sentenceToBlock } = buildBlocks(file.paragraphs, file.sentences)
+    file.blocks = blocks
+    file.sentenceToBlock = sentenceToBlock
+    blocks.forEach(b => { b.duration = b.sents.reduce((a, i) => a + file.durations[i], 0) })
+    elapsedBeforeCurrent = file.durations.slice(0, currentIndex).reduce((a, b) => a + b, 0)
+    totalTimeEl.textContent = formatTime(file.totalDuration)
   }
-  if (isPlaying || isPaused) speak(idx)
+  if (isPlaying || isPaused) jumpToIndex(currentIndex)
   window.electronAPI.setConfig({ lastSpeed: speed })
 })
 
-// ── OCR ───────��───────────────────────────────────────────────────────────
-async function handleOCR(bufferArray, fileName) {
-  showStatus('正在识别扫描版 PDF，请稍候...')
-  btnPlay.disabled = true
+// ── OCR ───────────────────────────────────────────────────────────────────
+async function runOCR(bufferArray, fileName) {
+  showStatus(`正在识别扫描版 PDF：${fileName} ...`)
   try {
     const pdfjsLib = await import('../node_modules/pdfjs-dist/build/pdf.mjs')
     pdfjsLib.GlobalWorkerOptions.workerSrc = '../node_modules/pdfjs-dist/build/pdf.worker.mjs'
@@ -416,8 +597,13 @@ async function handleOCR(bufferArray, fileName) {
       fullText += text + '\n'
     }
     await worker.terminate()
-    hideStatus(); loadText(fullText)
-  } catch (err) { hideStatus(); alert('OCR 识别失败：' + err.message) }
+    return fullText
+  } catch (err) {
+    showNotification('OCR 识别失败：' + err.message)
+    return null
+  } finally {
+    hideStatus()
+  }
 }
 
 function showStatus(msg) {
@@ -437,7 +623,7 @@ function showNotification(msg) {
   notificationBar.textContent = msg
   notificationBar.classList.add('show')
   clearTimeout(notifTimer)
-  notifTimer = setTimeout(() => notificationBar.classList.remove('show'), 3000)
+  notifTimer = setTimeout(() => notificationBar.classList.remove('show'), 4000)
 }
 
 // ── 工具函数 ──────────────────────────────────────────────────────────────
@@ -446,3 +632,23 @@ function formatTime(seconds) {
   return `${String(Math.floor(s / 60)).padStart(2, '0')}:${String(s % 60).padStart(2, '0')}`
 }
 function setPlayIcon(playing) { btnPlay.textContent = playing ? '⏸' : '▶' }
+
+// ── 字体大小 ──────────────────────────────────────────────────────────────
+function applyFontSize() {
+  textArea.style.fontSize = fontSize + 'px'
+  fontSizeValue.textContent = fontSize === DEFAULT_FONT_SIZE ? '默认' : fontSize
+  window.electronAPI.setConfig({ lastFontSize: fontSize })
+}
+
+btnFontMinus.addEventListener('click', () => {
+  fontSize = Math.max(MIN_FONT_SIZE, fontSize - 1)
+  applyFontSize()
+})
+btnFontPlus.addEventListener('click', () => {
+  fontSize = Math.min(MAX_FONT_SIZE, fontSize + 1)
+  applyFontSize()
+})
+fontSizeValue.addEventListener('click', () => {
+  fontSize = DEFAULT_FONT_SIZE
+  applyFontSize()
+})

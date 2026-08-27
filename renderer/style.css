@@ -78,6 +78,13 @@ body {
   opacity: 0.85;
 }
 
+/* 主区域：正文 + 右侧文件列表 */
+.main-area {
+  flex: 1;
+  display: flex;
+  min-height: 0;
+}
+
 /* 文本区域 */
 .text-area {
   flex: 1;
@@ -85,6 +92,7 @@ body {
   padding: 24px 32px;
   line-height: 2;
   font-size: 17px;
+  min-width: 0;
 }
 
 .text-area::-webkit-scrollbar {
@@ -105,7 +113,13 @@ body {
 }
 
 .sentences {
-  display: inline;
+  display: block;
+}
+
+.para {
+  display: block;
+  margin-bottom: 1.1em;
+  text-indent: 2em;
 }
 
 .sentence {
@@ -265,6 +279,32 @@ body {
   color: var(--accent-light);
   min-width: 32px;
 }
+
+/* 字体大小控制 */
+.font-size-control {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-left: 16px;
+  padding-left: 16px;
+  border-left: 1px solid var(--surface2);
+}
+
+.font-btn {
+  font-size: 14px;
+  font-weight: 600;
+  padding: 4px 8px;
+}
+
+.font-size-value {
+  font-size: 12px;
+  color: var(--accent-light);
+  min-width: 34px;
+  text-align: center;
+  cursor: pointer;
+  user-select: none;
+}
+.font-size-value:hover { color: var(--accent); }
 
 /* ── 通知条 ─────────────────────────────────── */
 .notification-bar {
@@ -520,3 +560,48 @@ body {
   transition: opacity 0.15s;
 }
 .voice-cred-save:hover { opacity: 0.85; }
+
+/* ── 右侧文件列表 ─────────────────────────────── */
+.file-sidebar {
+  width: 200px;
+  flex-shrink: 0;
+  flex-direction: column;
+  background: var(--surface);
+  border-left: 1px solid rgba(255,255,255,0.05);
+  overflow-y: auto;
+}
+
+.file-sidebar-title {
+  font-size: 12px;
+  color: var(--text-muted);
+  padding: 14px 16px 8px;
+  letter-spacing: 0.5px;
+}
+
+.file-list {
+  display: flex;
+  flex-direction: column;
+  padding: 0 8px 12px;
+  gap: 2px;
+}
+
+.file-item {
+  font-size: 13px;
+  color: var(--text);
+  padding: 8px 10px;
+  border-radius: 6px;
+  cursor: pointer;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  transition: background 0.15s;
+}
+
+.file-item:hover {
+  background: var(--surface2);
+}
+
+.file-item.active {
+  background: var(--accent);
+  color: #fff;
+}

@@ -17,12 +17,19 @@
       <button class="btn-open" id="btnOpen">打开文件</button>
     </div>
 
-    <!-- 文本显示区域 -->
-    <div class="text-area" id="textArea">
-      <div class="placeholder" id="placeholder">
-        <p>点击「打开文件」加载 Word、PDF 或 TXT 文档</p>
+    <!-- 主区域：正文 + 右侧文件列表 -->
+    <div class="main-area">
+      <div class="text-area" id="textArea">
+        <div class="placeholder" id="placeholder">
+          <p>点击「打开文件」加载 Word / PDF / TXT / WPS 文档，支持多选</p>
+        </div>
+        <div class="sentences" id="sentences"></div>
       </div>
-      <div class="sentences" id="sentences"></div>
+
+      <aside class="file-sidebar" id="fileSidebar" style="display:none">
+        <div class="file-sidebar-title">已导入文件</div>
+        <div class="file-list" id="fileList"></div>
+      </aside>
     </div>
 
     <!-- 播放器控制栏 -->
@@ -75,6 +82,12 @@
           <span class="speed-label">语速</span>
           <input type="range" id="speedSlider" min="0.5" max="2" step="0.1" value="1" />
           <span class="speed-value" id="speedValue">1.0x</span>
+        </div>
+
+        <div class="font-size-control">
+          <button class="ctrl-btn font-btn" id="btnFontMinus" title="减小字体">A−</button>
+          <span class="font-size-value" id="fontSizeValue" title="点击恢复系统默认">默认</span>
+          <button class="ctrl-btn font-btn" id="btnFontPlus" title="增大字体">A+</button>
         </div>
       </div>
     </div>
