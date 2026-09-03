@@ -32,8 +32,9 @@ export class EdgeEngine {
   clearCache() { this._cache.clear() }
 
   async synthesize(text, voice, speed) {
+    // Same in-memory 24kHz 48kbps MP3 path as speak()/playback.
     const ratePercent = Math.round((speed - 1) * 100)
-    return this._fetch(text, voice, ratePercent, 'pcm')
+    return this._fetch(text, voice, ratePercent)
   }
 
   async speak(text, voice, speed) {

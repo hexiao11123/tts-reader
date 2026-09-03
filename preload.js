@@ -8,6 +8,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   openPrivacy: () => ipcRenderer.invoke('open-privacy'),
   edgeTTS:   (params) => ipcRenderer.invoke('edge-tts', params),
   systemTTS: (params) => ipcRenderer.invoke('system-tts', params),
+  decodeMp3: (b64) => ipcRenderer.invoke('decode-mp3', b64),
   chooseExportPath: (opts) => ipcRenderer.invoke('choose-export-path', opts),
   saveExport: (payload) => ipcRenderer.invoke('save-export', payload),
 })

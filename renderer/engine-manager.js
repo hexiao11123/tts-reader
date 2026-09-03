@@ -71,10 +71,17 @@ export class EngineManager {
     if (this._mode === 'edge') {
       const result = await this._edge.synthesize(text, this._currentVcn, this._speed)
       const { buffer } = pcmFromBase64(result.audio)
-      if (result.format === 'pcm') {
+      if (result.format === 'pcm' && buffer.byteLength > 44) {
         return pcmFromMaybeWav(buffer)
       }
-      return decodeToPcm24k(buffer)
+      try {
+        return await decodeToPcm24k(buffer)
+      } catch (err) {
+        const raw = await window.electronAPI.decodeMp3(result.audio)
+        const bytes = raw instanceof Uint8Array ? raw.slice() : new Uint8Array(raw)
+        const even = bytes.byteLength & ~1
+        return new Int16Array(bytes.buffer, 0, even / 2)
+      }
     }
     if (this._mode === 'xunfei') {
       const pcm16k = await this._xunfei.synthesize(text, this._currentVcn, this._speed)

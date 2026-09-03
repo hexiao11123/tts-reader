@@ -4,7 +4,7 @@ const fs = require('fs')
 const { execFile } = require('child_process')
 const util = require('util')
 const execFileAsync = util.promisify(execFile)
-const { encodeWav, pcmToM4a, TARGET_RATE } = require('./lib/audio-encode')
+const { encodeWav, pcmToM4a, mp3ToPcm24k, TARGET_RATE } = require('./lib/audio-encode')
 const { synthesizeSystemPcm } = require('./lib/system-tts')
 
 const EDGE_PLAYBACK_FORMAT = 'audio-24khz-48kbitrate-mono-mp3'
@@ -216,19 +216,25 @@ ipcMain.handle('open-privacy', () => {
 
 ipcMain.handle('edge-tts', async (_, { text, voice, rate, format }) => {
   const wantPcm = format === 'pcm'
-  try {
-    const buf = await edgeSynthesize({ text, voice, rate, format: wantPcm ? 'pcm' : 'mp3' })
-    return { audio: buf.toString('base64'), format: wantPcm ? 'pcm' : 'mp3' }
-  } catch (err) {
-    if (!wantPcm) throw err
-    // PCM 若被库拒绝，回退到与播放相同的 24kHz MP3 再由渲染进程解码
-    const buf = await edgeSynthesize({ text, voice, rate, format: 'mp3' })
-    return { audio: buf.toString('base64'), format: 'mp3' }
+  if (wantPcm) {
+    try {
+      const buf = await edgeSynthesize({ text, voice, rate, format: 'pcm' })
+      if (buf.length > 44) return { audio: buf.toString('base64'), format: 'pcm' }
+    } catch (err) {
+      console.warn('Edge PCM 不可用，回退播放同款 MP3:', err.message)
+    }
   }
+  const buf = await edgeSynthesize({ text, voice, rate, format: 'mp3' })
+  return { audio: buf.toString('base64'), format: 'mp3' }
 })
 
 ipcMain.handle('system-tts', async (_, { text, voice, speed }) => {
   const pcm = await synthesizeSystemPcm(text, voice, speed)
+  return Buffer.from(pcm.buffer, pcm.byteOffset, pcm.byteLength)
+})
+
+ipcMain.handle('decode-mp3', async (_, b64) => {
+  const pcm = await mp3ToPcm24k(Buffer.from(b64, 'base64'))
   return Buffer.from(pcm.buffer, pcm.byteOffset, pcm.byteLength)
 })
 
