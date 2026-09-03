@@ -78,6 +78,30 @@ body {
   opacity: 0.85;
 }
 
+.topbar-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.btn-export {
+  background: var(--surface2);
+  color: var(--text);
+  border: 1px solid rgba(255,255,255,0.08);
+  border-radius: 6px;
+  padding: 6px 14px;
+  font-size: 13px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.btn-export:hover { background: #3a3a52; }
+.btn-export:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+}
+
 /* 主区域：正文 + 右侧文件列表 */
 .main-area {
   flex: 1;
@@ -438,15 +462,81 @@ body {
   background: var(--surface);
   border-radius: 14px;
   padding: 28px 32px;
-  width: 360px;
+  width: 440px;
+  max-height: min(86vh, 720px);
+  overflow-y: auto;
   position: relative;
   box-shadow: 0 8px 40px rgba(0,0,0,0.5);
 }
 
+.settings-section {
+  margin-bottom: 22px;
+}
+.settings-section:last-child { margin-bottom: 0; }
+
 .settings-panel h3 {
   font-size: 16px;
   color: var(--text);
-  margin-bottom: 20px;
+  margin-bottom: 10px;
+}
+
+.about-line {
+  font-size: 14px;
+  color: var(--text);
+  margin-bottom: 8px;
+}
+
+.about-note,
+.settings-risk {
+  font-size: 12px;
+  color: var(--text-muted);
+  line-height: 1.55;
+  margin-bottom: 10px;
+}
+
+.settings-risk {
+  color: #f9e2af;
+}
+
+.settings-check {
+  display: flex;
+  flex-direction: row;
+  align-items: flex-start;
+  gap: 8px;
+  font-size: 13px;
+  color: var(--text);
+  margin-bottom: 10px;
+  cursor: pointer;
+}
+.settings-check input { margin-top: 3px; }
+
+.btn-link-btn {
+  background: none;
+  border: none;
+  padding: 0;
+  font-size: 12px;
+  color: var(--accent-light);
+  cursor: pointer;
+  text-decoration: none;
+}
+.btn-link-btn:hover { text-decoration: underline; }
+
+.export-formats {
+  border: 1px solid rgba(255,255,255,0.07);
+  border-radius: 8px;
+  padding: 10px 12px 4px;
+  margin: 12px 0 14px;
+}
+.export-formats legend {
+  font-size: 12px;
+  color: var(--text-muted);
+  padding: 0 4px;
+}
+.export-progress {
+  font-size: 12px;
+  color: var(--accent-light);
+  min-height: 1.2em;
+  margin: 8px 0 4px;
 }
 
 .settings-panel label {

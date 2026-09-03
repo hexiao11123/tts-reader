@@ -1,0 +1,21 @@
+Copyright (c) 2026 tts-reader authors. All rights reserved.
+
+This software (朗读器 / tts-reader) is proprietary software.
+
+From version 3.2.0 onward, tts-reader is a paid product. Paid builds,
+installers, and binaries may not be copied, redistributed, sublicensed,
+sold, or otherwise transferred except as expressly permitted in writing
+by the copyright holder.
+
+You may not:
+  - redistribute paid builds or derived installers
+  - re-release this software as a free download
+  - sell or sublicense version 3.1.0 (or earlier GitHub releases) as a
+    paid product; those historical tags remain the last free GitHub
+    releases and must not be rebranded as paid
+
+Version 3.1.0 remains the last free GitHub release. Existing 3.1.0 and
+earlier git tags are retained for historical access and must not be
+deleted.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND.

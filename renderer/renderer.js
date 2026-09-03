@@ -1,5 +1,6 @@
-import { VOICE_CATEGORIES, findVoice } from './voices.js'
-import { EngineManager } from './engine-manager.js'
+import { VOICE_CATEGORIES, findVoice, visibleCategories } from './voices.js'
+import { EngineManager, AI_DISCLOSURE } from './engine-manager.js'
+import { encodeM4aViaMediaRecorder } from './audio-export.js'
 
 // ── 状态 ─────────────────────────────────────────────────────────────────
 let files = []             // [{ id, name, text, paragraphs, sentences, durations, totalDuration, blocks, sentenceToBlock }]
@@ -19,16 +20,18 @@ let blockHighlightTimer = null
 let currentSentenceStart = 0
 let elapsedBeforeCurrent = 0
 let speakGen = 0
-let currentVcn = 'xiaoyan'
+let currentVcn = '__system_default__'
 let voicePanelOpen = false
-let activeCategoryId = 'edge'
+let activeCategoryId = 'system'
+let enableEdgeExperimental = false
+let exportBusy = false
 
 // 单块最大字符数：超过则拆分，避免 Edge TTS 单次请求过长
 const MAX_BLOCK_CHARS = 400
 
 // ── 引擎管理 ──────────────────────────────────────────────────────────────
 const engine = new EngineManager({
-  onFallback: (errMsg) => showNotification('Edge TTS 失败: ' + errMsg),
+  onFallback: (errMsg) => showNotification('在线语音失败，已回退系统语音: ' + errMsg),
   onModeChange: (mode) => {
     if (mode === 'system') {
       activeCategoryId = 'system'
@@ -41,6 +44,7 @@ const engine = new EngineManager({
 
 // ── DOM ──────────────────────────────────────────────────────────────────
 const btnOpen      = document.getElementById('btnOpen')
+const btnExport    = document.getElementById('btnExport')
 const btnPlay      = document.getElementById('btnPlay')
 const btnPrev      = document.getElementById('btnPrev')
 const btnNext      = document.getElementById('btnNext')
@@ -81,6 +85,15 @@ const vpApiKey         = document.getElementById('vpApiKey')
 const vpApiSecret      = document.getElementById('vpApiSecret')
 const vpSave           = document.getElementById('vpSave')
 const vpStatus         = document.getElementById('vpStatus')
+const cfgEnableEdge    = document.getElementById('cfgEnableEdge')
+const aboutVersion     = document.getElementById('aboutVersion')
+const btnPrivacy       = document.getElementById('btnPrivacy')
+const exportOverlay    = document.getElementById('exportOverlay')
+const btnCloseExport   = document.getElementById('btnCloseExport')
+const btnCancelExport  = document.getElementById('btnCancelExport')
+const btnStartExport   = document.getElementById('btnStartExport')
+const exportDisclosure = document.getElementById('exportDisclosure')
+const exportProgress   = document.getElementById('exportProgress')
 
 // ── 初始化 ────────────────────────────────────────────────────────────────
 async function init() {
@@ -92,6 +105,7 @@ async function init() {
   engine.setSpeed(speed)
   fontSize = cfg.lastFontSize || 17
   applyFontSize()
+  enableEdgeExperimental = !!cfg.enableEdgeExperimental
 
   const sysVoices = window.speechSynthesis.getVoices()
   const sysCat = VOICE_CATEGORIES.find(c => c.id === 'system')
@@ -100,17 +114,37 @@ async function init() {
     .map(v => ({ vcn: v.name, name: v.name.replace(/^Microsoft /, '').split(' ')[0] }))
   if (sysCat.voices.length === 0) sysCat.voices = [{ vcn: '__system_default__', name: '系统默认' }]
 
-  currentVcn = cfg.lastVoice || 'zh-CN-XiaoxiaoNeural'
+  currentVcn = cfg.lastVoice || ''
   const found = findVoice(currentVcn)
-  if (found) {
+  const edgeOk = enableEdgeExperimental
+  if (found && (!found.category.experimental || edgeOk)) {
     activeCategoryId = found.category.id
     engine.setVcn(currentVcn)
     engine.setMode(found.category.engine || 'system')
+  } else {
+    const sysCat = VOICE_CATEGORIES.find(c => c.id === 'system')
+    currentVcn = sysCat.voices[0]?.vcn || '__system_default__'
+    activeCategoryId = 'system'
+    engine.setVcn(currentVcn)
+    engine.setMode('system')
   }
 
   renderVoicePanel()
   updateVoiceButton()
-  btnPlay.disabled = true
+  btnPlay.disabled = !getActiveFile()
+}
+
+function applyEdgeExperimental(enabled) {
+  enableEdgeExperimental = !!enabled
+  const found = findVoice(currentVcn)
+  if (found?.category.experimental && !enableEdgeExperimental) {
+    const sysCat = VOICE_CATEGORIES.find(c => c.id === 'system')
+    const v = sysCat.voices[0] || { vcn: '__system_default__', name: '系统默认' }
+    selectVoice(sysCat, v)
+  }
+  if (activeCategoryId === 'edge' && !enableEdgeExperimental) activeCategoryId = 'system'
+  renderVoicePanel()
+  updateVoiceButton()
 }
 
 window.speechSynthesis.onvoiceschanged = init
@@ -119,7 +153,9 @@ init()
 // ── 音色面板 ──────────────────────────────────────────────────────────────
 function renderVoicePanel() {
   voiceCatsEl.innerHTML = ''
-  for (const cat of VOICE_CATEGORIES) {
+  const cats = visibleCategories(enableEdgeExperimental)
+  if (!cats.some(c => c.id === activeCategoryId)) activeCategoryId = 'system'
+  for (const cat of cats) {
     const btn = document.createElement('button')
     btn.className = 'voice-cat-btn' + (cat.id === activeCategoryId ? ' active' : '')
     btn.textContent = cat.label
@@ -131,7 +167,8 @@ function renderVoicePanel() {
   }
 
   voiceListEl.innerHTML = ''
-  const cat = VOICE_CATEGORIES.find(c => c.id === activeCategoryId)
+  const cat = cats.find(c => c.id === activeCategoryId)
+  if (!cat) return
   for (const v of cat.voices) {
     const btn = document.createElement('button')
     btn.className = 'voice-item-btn' + (v.vcn === currentVcn ? ' active' : '')
@@ -195,6 +232,9 @@ vpSave.addEventListener('click', async () => {
 // ── 设置面板 ──────────────────────────────────────────────────────────────
 btnSettings.addEventListener('click', async () => {
   const cfg = await window.electronAPI.getConfig()
+  const info = await window.electronAPI.getAppInfo()
+  aboutVersion.textContent = `${info.name} v${info.version}（付费版）`
+  cfgEnableEdge.checked = !!cfg.enableEdgeExperimental
   cfgAppId.value     = cfg.xunfei.appId     || ''
   cfgApiKey.value    = cfg.xunfei.apiKey    || ''
   cfgApiSecret.value = cfg.xunfei.apiSecret || ''
@@ -206,6 +246,14 @@ btnSettings.addEventListener('click', async () => {
 
 btnCloseSettings.addEventListener('click', () => { settingsOverlay.style.display = 'none' })
 settingsOverlay.addEventListener('click', (e) => { if (e.target === settingsOverlay) settingsOverlay.style.display = 'none' })
+
+btnPrivacy.addEventListener('click', () => { window.electronAPI.openPrivacy() })
+
+cfgEnableEdge.addEventListener('change', async () => {
+  const enabled = cfgEnableEdge.checked
+  await window.electronAPI.setConfig({ enableEdgeExperimental: enabled })
+  applyEdgeExperimental(enabled)
+})
 
 btnSave.addEventListener('click', async () => {
   const cfg = { appId: cfgAppId.value.trim(), apiKey: cfgApiKey.value.trim(), apiSecret: cfgApiSecret.value.trim() }
@@ -511,6 +559,7 @@ function activateFile(id) {
   setPlayIcon(false)
   isPlaying = false; isPaused = false
   btnPlay.disabled = false
+  btnExport.disabled = false
   renderFileList()
 }
 
@@ -535,6 +584,84 @@ btnOpen.addEventListener('click', async () => {
   const results = await window.electronAPI.openFile()
   if (!results || results.length === 0) return
   await addFiles(results)
+})
+
+function selectedExportFormat() {
+  const el = document.querySelector('input[name="exportFormat"]:checked')
+  return el ? el.value : 'wav'
+}
+
+function closeExport() {
+  if (exportBusy) return
+  exportOverlay.style.display = 'none'
+  exportProgress.textContent = ''
+}
+
+btnExport.addEventListener('click', () => {
+  const file = getActiveFile()
+  if (!file) { showNotification('请先打开文档'); return }
+  exportProgress.textContent = ''
+  btnStartExport.disabled = false
+  exportOverlay.style.display = 'flex'
+})
+btnCloseExport.addEventListener('click', closeExport)
+btnCancelExport.addEventListener('click', closeExport)
+exportOverlay.addEventListener('click', (e) => { if (e.target === exportOverlay) closeExport() })
+
+btnStartExport.addEventListener('click', async () => {
+  const file = getActiveFile()
+  if (!file || !file.blocks.length) { showNotification('当前文档没有可导出的文本'); return }
+  const format = selectedExportFormat()
+  const formats = format === 'both' ? ['wav', 'm4a'] : [format]
+  const baseName = (file.name || '朗读').replace(/\.[^.]+$/, '') + '-朗读'
+  const defaultExt = formats[0] === 'm4a' && format !== 'both' ? '.m4a' : '.wav'
+  const destPath = await window.electronAPI.chooseExportPath({
+    defaultName: baseName + defaultExt,
+    format,
+  })
+  if (!destPath) return
+
+  exportBusy = true
+  btnStartExport.disabled = true
+  if (isPlaying || isPaused) stopAll()
+
+  const texts = file.blocks.map(b => b.text)
+  if (exportDisclosure.checked) texts.unshift(AI_DISCLOSURE)
+
+  try {
+    const pcm = await engine.synthesizeBlocks(texts, {
+      onProgress: (i, n) => {
+        exportProgress.textContent = i < n ? `正在合成 ${i + 1} / ${n}…` : '正在编码音频…'
+      },
+    })
+    if (!pcm.length) throw new Error('合成结果为空')
+
+    let m4a = null
+    if (formats.includes('m4a')) {
+      try {
+        m4a = await encodeM4aViaMediaRecorder(pcm)
+      } catch (err) {
+        console.warn('渲染进程 AAC 编码不可用，改用主进程:', err.message)
+      }
+    }
+    exportProgress.textContent = '正在写入文件…'
+    const result = await window.electronAPI.saveExport({
+      destPath,
+      formats,
+      pcm: new Uint8Array(pcm.buffer, pcm.byteOffset, pcm.byteLength),
+      m4a,
+    })
+    const paths = Object.values(result.written || {})
+    exportProgress.textContent = '已导出：' + paths.map(p => p.split(/[/\\]/).pop()).join('、')
+    showNotification('导出完成')
+    setTimeout(closeExport, 800)
+  } catch (err) {
+    exportProgress.textContent = ''
+    showNotification('导出失败：' + (err.message || err))
+  } finally {
+    exportBusy = false
+    btnStartExport.disabled = false
+  }
 })
 
 btnPlay.addEventListener('click', pauseResume)

@@ -48,7 +48,7 @@ export class XunfeiEngine {
     return Math.round((uiRate - 0.5) / 1.5 * 100)
   }
 
-  async speak(text, vcn, speed) {
+  async synthesize(text, vcn, speed) {
     this._cancelled = false
     const { appId, apiKey, apiSecret } = this._config
     if (!appId || !apiKey || !apiSecret) throw new Error('未配置讯飞凭证')
@@ -84,7 +84,7 @@ export class XunfeiEngine {
       }
 
       ws.onmessage = (e) => {
-        if (this._cancelled) { ws.close(); resolve(); return }
+        if (this._cancelled) { ws.close(); resolve(new Int16Array(0)); return }
         const msg = JSON.parse(e.data)
         if (msg.code !== 0) { ws.close(); rejectOnce(new Error(`讯飞错误码 ${msg.code}`)); return }
         if (msg.data?.audio) {
@@ -97,13 +97,23 @@ export class XunfeiEngine {
         if (msg.data?.status === 2) {
           done = true
           ws.close()
-          playPCMChunks(chunks).then(resolve).catch(reject)
+          const totalLen = chunks.reduce((s, c) => s + c.length, 0)
+          const pcm = new Int16Array(totalLen)
+          let offset = 0
+          for (const c of chunks) { pcm.set(c, offset); offset += c.length }
+          resolve(pcm)
         }
       }
 
       ws.onerror = () => { if (!done) rejectOnce(new Error('WebSocket 错误')) }
       ws.onclose = () => { clearTimeout(timer); if (!done && !this._cancelled) rejectOnce(new Error('连接意外关闭')) }
     })
+  }
+
+  async speak(text, vcn, speed) {
+    const pcm = await this.synthesize(text, vcn, speed)
+    if (this._cancelled || !pcm.length) return
+    await playPCMChunks([pcm])
   }
 
   pause()  { this._cancelled = true; this._ws?.close() }
