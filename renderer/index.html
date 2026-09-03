@@ -14,7 +14,10 @@
     <!-- 顶部文件栏 -->
     <div class="topbar">
       <span class="file-name" id="fileName">未打开文件</span>
-      <button class="btn-open" id="btnOpen">打开文件</button>
+      <div class="topbar-actions">
+        <button class="btn-export" id="btnExport" disabled>导出音频</button>
+        <button class="btn-open" id="btnOpen">打开文件</button>
+      </div>
     </div>
 
     <!-- 主区域：正文 + 右侧文件列表 -->
@@ -95,16 +98,60 @@
     <!-- 设置面板（覆盖层） -->
     <div class="settings-overlay" id="settingsOverlay" style="display:none">
       <div class="settings-panel">
-        <h3>讯飞语音设置</h3>
-        <label>AppID<input type="text" id="cfgAppId" placeholder="请输入 AppID" /></label>
-        <label>APIKey<input type="text" id="cfgApiKey" placeholder="请输入 APIKey" /></label>
-        <label>APISecret<input type="password" id="cfgApiSecret" placeholder="请输入 APISecret" /></label>
-        <div class="settings-actions">
-          <a class="btn-link" href="https://www.xfyun.cn/services/online_tts" target="_blank">去讯飞开放平台注册 ↗</a>
-          <button class="btn-save" id="btnSave">保存</button>
-        </div>
-        <div class="settings-status" id="settingsStatus">状态：○ 未配置</div>
         <button class="btn-close-settings" id="btnCloseSettings">✕</button>
+
+        <section class="settings-section">
+          <h3>关于</h3>
+          <p class="about-line" id="aboutVersion">朗读器</p>
+          <p class="about-note">v3.2 起为付费版本。v3.1.0 仍是 GitHub 上最后一个免费发布版本，历史 tag 予以保留。</p>
+          <button type="button" class="btn-link-btn" id="btnPrivacy">打开隐私说明</button>
+        </section>
+
+        <section class="settings-section">
+          <h3>高级</h3>
+          <label class="settings-check">
+            <input type="checkbox" id="cfgEnableEdge" />
+            启用 Edge 神经语音（实验性）
+          </label>
+          <p class="settings-risk" id="edgeRiskCopy">Edge 神经语音依赖非官方的 Microsoft Edge 在线接口，文本会发送至微软服务器。该接口可能不稳定、随时变更或失效，不建议作为默认语音。请优先使用系统语音。本版本不包含 Azure。</p>
+        </section>
+
+        <section class="settings-section">
+          <h3>讯飞语音（可选）</h3>
+          <p class="about-note">讯飞不是默认引擎。仅在你自行填写开放平台密钥后才会请求讯飞；密钥保存在本机。</p>
+          <label>AppID<input type="text" id="cfgAppId" placeholder="请输入 AppID" /></label>
+          <label>APIKey<input type="text" id="cfgApiKey" placeholder="请输入 APIKey" /></label>
+          <label>APISecret<input type="password" id="cfgApiSecret" placeholder="请输入 APISecret" /></label>
+          <div class="settings-actions">
+            <a class="btn-link" href="https://www.xfyun.cn/services/online_tts" target="_blank">去讯飞开放平台注册 ↗</a>
+            <button class="btn-save" id="btnSave">保存</button>
+          </div>
+          <div class="settings-status" id="settingsStatus">状态：○ 未配置</div>
+        </section>
+      </div>
+    </div>
+
+    <!-- 导出面板 -->
+    <div class="settings-overlay" id="exportOverlay" style="display:none">
+      <div class="settings-panel export-panel">
+        <button class="btn-close-settings" id="btnCloseExport">✕</button>
+        <h3>导出音频</h3>
+        <p class="about-note">将当前文档按所选音色合成为音频文件（与播放相同的 TTS 路径，不是屏幕录制）。</p>
+        <fieldset class="export-formats">
+          <legend>格式</legend>
+          <label class="settings-check"><input type="radio" name="exportFormat" value="wav" checked /> WAV（24 kHz 16-bit 单声道）</label>
+          <label class="settings-check"><input type="radio" name="exportFormat" value="m4a" /> M4A（AAC 约 48 kbps）</label>
+          <label class="settings-check"><input type="radio" name="exportFormat" value="both" /> 同时导出 WAV 和 M4A</label>
+        </fieldset>
+        <label class="settings-check">
+          <input type="checkbox" id="exportDisclosure" />
+          在开头加入人工智能生成声明（朗读「本音频由人工智能生成」）
+        </label>
+        <p class="export-progress" id="exportProgress"></p>
+        <div class="settings-actions">
+          <button class="btn-link-btn" id="btnCancelExport">取消</button>
+          <button class="btn-save" id="btnStartExport">开始导出</button>
+        </div>
       </div>
     </div>
   </div>

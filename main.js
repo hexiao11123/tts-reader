@@ -4,6 +4,43 @@ const fs = require('fs')
 const { execFile } = require('child_process')
 const util = require('util')
 const execFileAsync = util.promisify(execFile)
+const { encodeWav, pcmToM4a, TARGET_RATE } = require('./lib/audio-encode')
+const { synthesizeSystemPcm } = require('./lib/system-tts')
+
+const EDGE_PLAYBACK_FORMAT = 'audio-24khz-48kbitrate-mono-mp3'
+const EDGE_EXPORT_PCM_FORMAT = 'raw-24khz-16bit-mono-pcm'
+
+function escapeSsml(text) {
+  return String(text)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+}
+
+async function edgeSynthesize({ text, voice, rate, format }) {
+  const { MsEdgeTTS, OUTPUT_FORMAT } = require('msedge-tts')
+  const outputFormat = format === 'pcm'
+    ? (OUTPUT_FORMAT.RAW_24KHZ_16BIT_MONO_PCM || EDGE_EXPORT_PCM_FORMAT)
+    : (OUTPUT_FORMAT.AUDIO_24KHZ_48KBITRATE_MONO_MP3 || EDGE_PLAYBACK_FORMAT)
+
+  const tts = new MsEdgeTTS()
+  await tts.setMetadata(voice, outputFormat)
+
+  const rateStr = rate >= 0 ? `+${rate}%` : `${rate}%`
+  const ssml = `<speak version='1.0' xmlns='http://www.w3.org/2001/10/synthesis' xml:lang='zh-CN'>` +
+    `<voice name='${escapeSsml(voice)}'><prosody rate='${rateStr}'>${escapeSsml(text)}</prosody></voice></speak>`
+
+  const { audioStream } = tts._rawSSMLRequest(ssml)
+  const chunks = []
+  await new Promise((resolve, reject) => {
+    audioStream.on('data', d => chunks.push(d))
+    audioStream.on('end', resolve)
+    audioStream.on('error', reject)
+  })
+  tts.close()
+  return Buffer.concat(chunks)
+}
 
 function getConfigPath() {
   return path.join(app.getPath('userData'), 'config.json')
@@ -149,32 +186,90 @@ ipcMain.handle('get-config', () => {
       apiKey:    decrypt(xf.apiKey),
       apiSecret: decrypt(xf.apiSecret),
     },
-    lastVoice: cfg.lastVoice || 'zh-CN-XiaoxiaoNeural',
+    lastVoice: cfg.lastVoice || '',
     lastSpeed: cfg.lastSpeed || 1.0,
     lastFontSize: cfg.lastFontSize || 17,
+    enableEdgeExperimental: !!cfg.enableEdgeExperimental,
   }
 })
 
-ipcMain.handle('edge-tts', async (_, { text, voice, rate }) => {
-  const { MsEdgeTTS, OUTPUT_FORMAT } = require('msedge-tts')
+ipcMain.handle('get-app-info', () => ({
+  version: app.getVersion(),
+  name: '朗读器',
+  lastFreeVersion: '3.1.0',
+}))
 
-  const tts = new MsEdgeTTS()
-  await tts.setMetadata(voice, OUTPUT_FORMAT.AUDIO_24KHZ_48KBITRATE_MONO_MP3)
-
-  // rate is a percentage offset: 0 = normal, +50 = 1.5x, -50 = 0.5x
-  const rateStr = rate >= 0 ? `+${rate}%` : `${rate}%`
-  const ssml = `<speak version='1.0' xmlns='http://www.w3.org/2001/10/synthesis' xml:lang='zh-CN'>` +
-    `<voice name='${voice}'><prosody rate='${rateStr}'>${text}</prosody></voice></speak>`
-
-  const { audioStream } = tts._rawSSMLRequest(ssml)
-  const chunks = []
-  await new Promise((resolve, reject) => {
-    audioStream.on('data', d => chunks.push(d))
-    audioStream.on('end', resolve)
-    audioStream.on('error', reject)
+ipcMain.handle('open-privacy', () => {
+  const privacyWin = new BrowserWindow({
+    width: 560,
+    height: 720,
+    minWidth: 400,
+    minHeight: 400,
+    title: '隐私说明',
+    backgroundColor: '#1e1e2e',
+    autoHideMenuBar: true,
+    webPreferences: { contextIsolation: true, nodeIntegration: false },
   })
-  tts.close()
-  return Buffer.concat(chunks).toString('base64')
+  privacyWin.loadFile(path.join(__dirname, 'docs', 'privacy.html'))
+  return { ok: true }
+})
+
+ipcMain.handle('edge-tts', async (_, { text, voice, rate, format }) => {
+  const wantPcm = format === 'pcm'
+  try {
+    const buf = await edgeSynthesize({ text, voice, rate, format: wantPcm ? 'pcm' : 'mp3' })
+    return { audio: buf.toString('base64'), format: wantPcm ? 'pcm' : 'mp3' }
+  } catch (err) {
+    if (!wantPcm) throw err
+    // PCM 若被库拒绝，回退到与播放相同的 24kHz MP3 再由渲染进程解码
+    const buf = await edgeSynthesize({ text, voice, rate, format: 'mp3' })
+    return { audio: buf.toString('base64'), format: 'mp3' }
+  }
+})
+
+ipcMain.handle('system-tts', async (_, { text, voice, speed }) => {
+  const pcm = await synthesizeSystemPcm(text, voice, speed)
+  return Buffer.from(pcm.buffer, pcm.byteOffset, pcm.byteLength)
+})
+
+ipcMain.handle('choose-export-path', async (event, { defaultName, format }) => {
+  const win = BrowserWindow.fromWebContents(event.sender)
+  const filters = format === 'm4a'
+    ? [{ name: 'M4A 音频', extensions: ['m4a'] }]
+    : format === 'both'
+      ? [{ name: 'WAV / M4A', extensions: ['wav', 'm4a'] }]
+      : [{ name: 'WAV 音频', extensions: ['wav'] }]
+  const { canceled, filePath } = await dialog.showSaveDialog(win || undefined, {
+    title: '导出音频',
+    defaultPath: defaultName,
+    filters,
+  })
+  if (canceled || !filePath) return null
+  return filePath
+})
+
+ipcMain.handle('save-export', async (_, { destPath, formats, pcm, m4a }) => {
+  const pcmBuf = Buffer.from(ArrayBuffer.isView(pcm)
+    ? Buffer.from(pcm.buffer, pcm.byteOffset, pcm.byteLength)
+    : pcm)
+  const samples = new Int16Array(pcmBuf.buffer, pcmBuf.byteOffset, Math.floor(pcmBuf.length / 2))
+  const base = destPath.replace(/\.(wav|m4a)$/i, '')
+  const written = {}
+  if (formats.includes('wav')) {
+    const wavPath = base + '.wav'
+    fs.writeFileSync(wavPath, encodeWav(samples, TARGET_RATE))
+    written.wav = wavPath
+  }
+  if (formats.includes('m4a')) {
+    const m4aPath = base + '.m4a'
+    const m4aBytes = m4a
+      ? (ArrayBuffer.isView(m4a) ? Buffer.from(m4a.buffer, m4a.byteOffset, m4a.byteLength) : Buffer.from(m4a))
+      : null
+    const bytes = (m4aBytes && m4aBytes.length > 32) ? m4aBytes : await pcmToM4a(samples, TARGET_RATE)
+    fs.writeFileSync(m4aPath, bytes)
+    written.m4a = m4aPath
+  }
+  return { ok: true, written }
 })
 
 ipcMain.handle('set-config', (_, patch) => {
@@ -194,6 +289,7 @@ ipcMain.handle('set-config', (_, patch) => {
   if (patch.lastVoice !== undefined) cfg.lastVoice = patch.lastVoice
   if (patch.lastSpeed !== undefined) cfg.lastSpeed = patch.lastSpeed
   if (patch.lastFontSize !== undefined) cfg.lastFontSize = patch.lastFontSize
+  if (patch.enableEdgeExperimental !== undefined) cfg.enableEdgeExperimental = !!patch.enableEdgeExperimental
   writeConfig(cfg)
   return { ok: true }
 })
